@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="AutoBleeding\AutoBleeding.cpp" />
+    <ClCompile Include="ColorConverter\ColorConverter.cpp" />
+    <ClCompile Include="Cut\Cut.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="Runtime.cpp" />
+    <ClCompile Include="SettingsStore.cpp" />
+    <ClCompile Include="UI.cpp" />
+    <ClCompile Include="Updater\Updater.cpp" />
+    <ClCompile Include="Updater\ArtifactValidation.cpp" />
+    <ClInclude Include="ColorConverter\ColorConverter.hpp" />
+    <ClInclude Include="Exports.hpp" />
+    <ClInclude Include="Runtime.hpp" />
+    <ClInclude Include="SettingsStore.hpp" />
+    <ClInclude Include="UI.hpp" />
+    <ClInclude Include="Cut\Cut.hpp" />
+    <ClInclude Include="Global.hpp" />
+    <ClInclude Include="AutoBleeding\AutoBleeding.hpp" />
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="Updater\Updater.hpp" />
+    <ClInclude Include="Version.hpp" />
+    <ClInclude Include="ScopeExit.hpp" />
+    <ClInclude Include="ApiBoundary.hpp" />
+    <ClInclude Include="Updater\ArtifactValidation.hpp" />
+    <ClInclude Include="InputLimits.hpp" />
+    <ClInclude Include="GeometryCache.hpp" />
+    <ClInclude Include="AtomicIni.hpp" />
+    <ClInclude Include="BufferedIni.hpp" />
+    <ClInclude Include="Cut\RegistrationLayout.hpp" />
+    <ResourceCompile Include="ImCut.rc" />
+    <None Include="ImCut.def" />
+  </ItemGroup>
+</Project>

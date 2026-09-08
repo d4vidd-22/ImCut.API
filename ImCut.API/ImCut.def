@@ -1,0 +1,20 @@
+EXPORTS
+    ImCut_Initialize
+    ImCut_ConnectCorel2026
+    ImCut_ConnectCorel2026Hidden
+    ImCut_Show
+    ImCut_Hide
+    ImCut_Toggle
+    ImCut_Shutdown
+    ImCut_IsInitialized
+    ImCut_IsVisible
+    ImCut_RunCut
+    ImCut_RunBleed
+    ImCut_RefreshColorProfiles
+    ImCut_ConvertSelection
+    ImCut_RunCutSaved
+    ImCut_RunBleedSaved
+    ImCut_ConvertSelectionSaved
+    ImCut_SetNestingCallback
+    ImCut_GetLastError
+    ImCut_GetVersion

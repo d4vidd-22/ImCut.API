@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 #pragma warning(push)
-#pragma warning(disable: 5033) 
+#pragma warning(disable: 5033)
 #include <lcms2.h>
 #pragma warning(pop)
 
@@ -978,11 +978,6 @@ namespace ImCut::Color
                 candidate.temperatureError =
                     std::numeric_limits<double>::infinity();
 
-            
-            
-            
-            
-            
             candidate.primaryError =
                 pointExactPriority
                 ? candidate.deltaE76
@@ -1033,6 +1028,8 @@ namespace ImCut::Color
 
             while (offset < candidates.size())
             {
+                Cancellation::ThrowIfRequested();
+
                 const std::size_t batch =
                     std::min(
                         batchLimit,
@@ -1143,6 +1140,8 @@ namespace ImCut::Color
 
             for (const int r : axis)
             {
+                Cancellation::ThrowIfRequested();
+
                 for (const int g : axis)
                 {
                     for (const int b : axis)
@@ -1181,6 +1180,8 @@ namespace ImCut::Color
 
             for (const auto& seed : seeds)
             {
+                Cancellation::ThrowIfRequested();
+
                 for (int dr = -radiusSteps;
                     dr <= radiusSteps;
                     ++dr)
@@ -1272,11 +1273,7 @@ namespace ImCut::Color
 
             for (int r = 0; r <= 255; ++r)
             {
-                if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
-                    throw OperationCancelled();
-                MSG paint{};
-                while (PeekMessageW(&paint, nullptr, WM_PAINT, WM_PAINT, PM_REMOVE))
-                    DispatchMessageW(&paint);
+                Cancellation::PumpPaintAndThrow();
                 const double normalizedR =
                     static_cast<double>(r) / 255.0;
 
@@ -1411,9 +1408,6 @@ namespace ImCut::Color
             bool usedDenseSearch = false;
             bool usedExhaustiveSearch = false;
 
-            
-            
-            
             seeds =
                 ScoreCandidates(
                     targetLab,
@@ -1430,6 +1424,7 @@ namespace ImCut::Color
 
             for (const int step : refinementSteps)
             {
+                Cancellation::ThrowIfRequested();
                 seeds =
                     ScoreCandidates(
                         targetLab,
@@ -1446,9 +1441,6 @@ namespace ImCut::Color
                     "Global RGB appearance search produced no candidates.");
             }
 
-            
-            
-            
             if (seeds.front().primaryError > 0.10)
             {
                 usedDenseSearch = true;
@@ -1461,6 +1453,7 @@ namespace ImCut::Color
 
                 for (const int step : { 2, 1 })
                 {
+                    Cancellation::ThrowIfRequested();
                     seeds =
                         ScoreCandidates(
                             targetLab,
@@ -1478,7 +1471,6 @@ namespace ImCut::Color
                     "Dense RGB appearance search produced no candidates.");
             }
 
-            
             if (forceExhaustive)
             {
                 usedDenseSearch = true;
@@ -1488,8 +1480,6 @@ namespace ImCut::Color
             }
             else
             {
-                
-                
                 const std::size_t finalSeedCount =
                     std::min<std::size_t>(
                         seeds.size(),
@@ -1703,10 +1693,6 @@ namespace ImCut::Color
                 "LittleCMS could not create an isolated appearance context.");
         }
 
-        
-        
-        
-        
         cmsSetAdaptationStateTHR(
             impl_->context,
             0.0);
@@ -1737,11 +1723,6 @@ namespace ImCut::Color
                 "LittleCMS could not open the selected ICC profiles.");
         }
 
-        
-        
-        
-        
-        
         constexpr cmsUInt32Number intent = INTENT_ABSOLUTE_COLORIMETRIC;
         constexpr cmsUInt32Number flags =
             cmsFLAGS_NOOPTIMIZE |
@@ -2032,6 +2013,7 @@ namespace ImCut::Color
 
         for (std::uint32_t c = 0; c < gridSize_; ++c)
         {
+            Cancellation::PumpPaintAndThrow();
             const double cyan = 100.0 * static_cast<double>(c) / denominator;
 
             for (std::uint32_t m = 0; m < gridSize_; ++m)
@@ -2373,10 +2355,6 @@ namespace ImCut::Color
             options_.intent =
                 RenderingIntent::AbsoluteColorimetric;
 
-            
-            
-            
-            
             options_.blackFloorEnabled = false;
         }
 
@@ -2426,6 +2404,7 @@ namespace ImCut::Color
 
         for (const std::uint32_t grid : grids)
         {
+            Cancellation::PumpPaintAndThrow();
             IccLut4D candidate;
             bool fromCache = false;
 
@@ -2663,6 +2642,7 @@ namespace ImCut::Color
 
             while (offset < count)
             {
+                Cancellation::ThrowIfRequested();
                 const std::size_t batch = std::min(count - offset, TranslateBatchLimit);
                 transform_->Translate(input + offset, temporary.data(), batch);
 
@@ -2863,6 +2843,7 @@ namespace ImCut::Color
 
         for (std::uint32_t i = 0; i < samples; ++i)
         {
+            Cancellation::Checkpoint(i);
             const std::uint32_t index = i + 1;
             input[i] =
             {
@@ -2883,6 +2864,7 @@ namespace ImCut::Color
 
         for (std::uint32_t i = 0; i < samples; ++i)
         {
+            Cancellation::Checkpoint(i);
             const auto estimated = lut.Sample16(input[i], options_.interpolation);
 
             const double errors[3]

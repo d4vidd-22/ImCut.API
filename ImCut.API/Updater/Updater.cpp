@@ -476,8 +476,6 @@ namespace ImCut::Updater
                         std::min<std::uint64_t>(total, maxBytes)));
             }
 
-            
-            
             std::vector<std::uint8_t> buffer(64 * 1024);
             std::uint64_t received = 0;
 

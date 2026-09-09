@@ -5,6 +5,7 @@
 #include <sstream>
 #include "../GeometryCache.hpp"
 #include "../InputLimits.hpp"
+#include "../OperationCancellation.hpp"
 
 
 
@@ -12,14 +13,7 @@ namespace ImCut::AutoBleeding::Detail
 {
     void PumpMessages()
     {
-        MSG msg{};
-        
-        
-        while (PeekMessageW(&msg, nullptr, WM_PAINT, WM_PAINT, PM_REMOVE))
-        {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
+        Cancellation::PumpPaintAndThrow();
     }
 
     void Deadline::Start(double seconds) noexcept
@@ -338,8 +332,6 @@ namespace ImCut::AutoBleeding
         cacheEnabled_ = true;
         cacheHits_ = 0;
         cacheMisses_ = 0;
-        
-        
         preferredStrategy_ = 2;
         performance_ = {};
         preparedClosedCurve_ = nullptr;
@@ -512,8 +504,8 @@ namespace ImCut::AutoBleeding
         addAttempt(preferredStrategy_);
         if (!quickRetry_)
         {
-            addAttempt(2); 
-            addAttempt(1); 
+            addAttempt(2);
+            addAttempt(1);
             for (long attempt = 3; attempt <= StrategyCount; ++attempt)
                 addAttempt(attempt);
         }
@@ -645,15 +637,9 @@ namespace ImCut::AutoBleeding
                         catch (...) {}
                     }
 
-                    
-                    
-                    
-                    
-                    
-                    constexpr long DensePathNodes = 128;
                     const bool canClean = !unexpected.empty() &&
                         (method == 1 || unexpected.size() == 1 ||
-                            maxSourceNodes >= DensePathNodes);
+                            maxSourceNodes >= BandHeavyNodes);
                     if (canClean && RemoveUnexpectedInternalSubpaths(
                         regionMaster,
                         resultShape,
@@ -674,9 +660,6 @@ namespace ImCut::AutoBleeding
                 if (valid)
                 {
                     performance_.validationMs += ElapsedMilliseconds(validationStart);
-                    
-                    
-                    
                     if (attempt == 2)
                         preferredStrategy_ = attempt;
                     lastStrategy_ = StrategyName(attempt);
@@ -697,9 +680,6 @@ namespace ImCut::AutoBleeding
             else if (attempt == 1 && nativeDistanceLimited &&
                 lastFailureDistanceLimited_ && adaptiveDistanceAvailable_)
             {
-                
-                
-                
                 quickRetryRecommended_ = true;
                 break;
             }
@@ -782,6 +762,8 @@ namespace ImCut::AutoBleeding
 
         try
         {
+            Cancellation::ThrowIfRequested();
+
             auto effect = regionShape->CreateContour(cdrContourOutside, distance, 1, cdrDirectFountainFillBlend, nullptr, nullptr, nullptr, 0, 0, cdrContourRoundCap, cdrContourCornerRound, ContourMiterLimit);
 
             if (!effect)
@@ -1314,8 +1296,6 @@ namespace ImCut::AutoBleeding
         if (!closedCurve)
             return nullptr;
 
-        
-        
         if (IsGroupShape(baseShape))
         {
             auto regionShape =
@@ -1325,8 +1305,6 @@ namespace ImCut::AutoBleeding
                 return regionShape;
         }
 
-        
-        
         try
         {
             if (baseShape->Type == cdrCurveShape && targetLayer)
@@ -1699,10 +1677,6 @@ namespace ImCut::AutoBleeding
             }
         }
 
-        
-        
-        
-        
         return true;
     }
 
@@ -1734,7 +1708,6 @@ namespace ImCut::AutoBleeding
             probe = regionProbe->Duplicate(0.0, 0.0);
             if (!probe) throw std::runtime_error("falha ao duplicar regiao");
             remainder = container->Trim(probe, VARIANT_TRUE, VARIANT_FALSE);
-            
             const double leftover = remainder ? area(remainder) : 0.0;
             Detail::DeleteShape(remainder);
             Detail::DeleteShape(probe);
@@ -1936,9 +1909,6 @@ namespace ImCut::AutoBleeding
                 if (!candidate.valid)
                     continue;
 
-                
-                
-                
                 bool enclosed = false;
                 for (long otherIndex = 1; otherIndex <= pathCount; ++otherIndex)
                 {
@@ -2198,9 +2168,6 @@ namespace ImCut::AutoBleeding
                 }
                 else if (minSide > distance * 3.0)
                 {
-                    
-                    
-                    
                     if (resultShape->IsOnShape(
                         cx,
                         cy,
@@ -3056,10 +3023,6 @@ namespace ImCut::AutoBleeding
         double pointTolerance,
         double areaTolerance)
     {
-        
-        
-        
-        
         if (targetIndex >= shapes_.size() || candidates.empty())
             return false;
 
@@ -3949,9 +3912,12 @@ namespace ImCut::AutoBleeding
         std::vector<IVGShapePtr> completedResults;
         UniversalBleedOffset bleedEngine(app_);
         bool batchStarted = false;
+        bool cancellationCaught = false;
 
         try
         {
+            Cancellation::ThrowIfRequested();
+
             if (!app_->Documents || app_->Documents->Count == 0)
                 throw std::runtime_error("Abra um documento antes de criar a sangria.");
 
@@ -4034,6 +4000,8 @@ namespace ImCut::AutoBleeding
 
                 for (long i = result.totalCount; i >= 1; --i)
                 {
+                    Cancellation::ThrowIfRequested();
+
                     IVGShapePtr sourceShape;
 
                     const auto workIndex = static_cast<std::size_t>(i - 1);
@@ -4159,11 +4127,6 @@ namespace ImCut::AutoBleeding
                 bleedEngine.EndBatch();
                 batchStarted = false;
 
-                
-                
-                
-                
-                
                 if (!pendingPowerClipFinalizations_.empty())
                 {
                     guard.RestoreEventsTemporarily();
@@ -4319,6 +4282,10 @@ namespace ImCut::AutoBleeding
                 pendingPowerClipFinalizations_.clear();
             }
         }
+        catch (const OperationCancelled&)
+        {
+            cancellationCaught = true;
+        }
         catch (const _com_error& error)
         {
             result.fatalError = "CorelDRAW COM error: " + Detail::ComErrorText(error);
@@ -4345,6 +4312,9 @@ namespace ImCut::AutoBleeding
 
             pendingPowerClipFinalizations_.clear();
         }
+
+        if (cancellationCaught)
+            throw OperationCancelled();
 
         try
         {
@@ -5034,9 +5004,6 @@ namespace ImCut::AutoBleeding
             return false;
         }
 
-        
-        
-        
         if (Detail::HasPowerClip(targetPowerClip))
         {
             diagnostic = "o container novo da sangria nao esta vazio";
@@ -5061,8 +5028,6 @@ namespace ImCut::AutoBleeding
             if (sourceContentCount <= 0)
                 return true;
 
-            
-            
             duplicate = CreateDetachedDuplicate(sourcePowerClip, targetLayer);
             if (!duplicate || !Detail::HasPowerClip(duplicate))
                 throw std::runtime_error("nao foi possivel criar a copia temporaria do PowerClip");
@@ -5489,8 +5454,6 @@ namespace ImCut::AutoBleeding
                 workingGeometry = geometryProxy;
             }
 
-            
-            
             double effectiveBleedDistance = bleedDistance;
             const double adaptiveStep = Detail::Mm(app_, AdaptiveRetryStepMm);
             const double adaptiveMaxExtra = Detail::Mm(app_, AdaptiveRetryMaxExtraMm);
@@ -5501,6 +5464,8 @@ namespace ImCut::AutoBleeding
 
             for (;;)
             {
+                Cancellation::ThrowIfRequested();
+
                 ++adaptiveAttempts;
                 lastBleedError.clear();
 
@@ -5524,6 +5489,10 @@ namespace ImCut::AutoBleeding
                     lastBleedError = "Erro COM: " + Detail::ComErrorText(error);
                     bleedShape = nullptr;
                 }
+                catch (const OperationCancelled&)
+                {
+                    throw;
+                }
                 catch (const std::exception& error)
                 {
                     lastBleedError = error.what();
@@ -5539,7 +5508,8 @@ namespace ImCut::AutoBleeding
                 if (bleedShape)
                     break;
 
-                if (adaptiveStep <= 0.0 ||
+                if (!quickRetryRecommended ||
+                    adaptiveStep <= 0.0 ||
                     adaptiveMaxExtra <= 0.0 ||
                     effectiveBleedDistance + adaptiveStep > adaptiveLimit + 1e-9)
                 {
@@ -5584,10 +5554,6 @@ namespace ImCut::AutoBleeding
 
                 if (preserveGroup)
                 {
-                    
-                    
-                    
-                    
                     cutlineCurve =
                         ExtractExteriorCutlineCurve(cutlineCurve);
                     cutlineGeometrySafe = cutlineCurve != nullptr;
@@ -5634,20 +5600,11 @@ namespace ImCut::AutoBleeding
             {
 
 
-                
-                
-                
-                
-                
-                
 
                 IVGCurvePtr cleanBleedCurve;
 
                 try
                 {
-                    
-                    
-                    
                     if (bleedShape->Type == cdrCurveShape && bleedShape->Curve)
                         cleanBleedCurve = bleedShape->Curve->GetCopy();
                 }
@@ -5656,17 +5613,9 @@ namespace ImCut::AutoBleeding
                     cleanBleedCurve = nullptr;
                 }
 
-                
                 if (!cleanBleedCurve)
                     cleanBleedCurve = Detail::CurveCopy(bleedShape);
 
-                
-                
-                
-                
-                
-                
-                
                 cdrFillMode generatedBleedFillMode = cdrFillAlternate;
                 bool generatedBleedFillModeCaptured = false;
 
@@ -5721,10 +5670,6 @@ namespace ImCut::AutoBleeding
                     throw std::runtime_error(
                         "O CorelDRAW nao criou o container limpo da sangria PowerClip.");
 
-                
-                
-                
-                
                 try
                 {
                     auto fillModeRange = app_->CreateShapeRange();
@@ -5739,9 +5684,6 @@ namespace ImCut::AutoBleeding
                 }
                 catch (...)
                 {
-                    
-                    
-                    
                     try
                     {
                         auto fillModeRange = app_->CreateShapeRange();
@@ -5772,7 +5714,6 @@ namespace ImCut::AutoBleeding
                         "O container limpo herdou PowerClip inesperadamente; operacao cancelada.");
                 }
 
-                
                 IVGShapePtr inheritedBleedShape = bleedShape;
                 bleedShape = cleanBleedShape;
                 cleanBleedShape = nullptr;
@@ -5897,6 +5838,14 @@ namespace ImCut::AutoBleeding
             sourceShape->Delete();
             return true;
         }
+        catch (const OperationCancelled&)
+        {
+            Detail::DeleteShape(cutlineShape);
+            Detail::DeleteShape(bleedShape);
+            Detail::DeleteShape(geometryProxy);
+            Detail::DeleteShape(generatedPowerClipShape);
+            throw;
+        }
         catch (const _com_error& error)
         {
             errorDescription = "Erro COM: " + Detail::ComErrorText(error);
@@ -5948,10 +5897,6 @@ namespace ImCut::AutoBleeding
 
             if (sourceCurve && sourceCurve->SubPaths)
             {
-                
-                
-                
-                
                 IVGCurvePtr cutCurve;
                 bool hasOpenSubpath = false;
 
@@ -6014,8 +5959,6 @@ namespace ImCut::AutoBleeding
                     }
                 }
 
-                
-                
                 if (!cutlineShape && sourceCurve->SubPaths->Count > 0)
                 {
                     try

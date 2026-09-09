@@ -11,7 +11,7 @@ namespace ImCut::GeometryCache
     struct Segment
     {
         bool cubic = false;
-        std::array<Point, 4> points{}; 
+        std::array<Point, 4> points{};
     };
     struct Path
     {
@@ -22,7 +22,6 @@ namespace ImCut::GeometryCache
     using Curve = std::vector<Path>;
     inline constexpr std::size_t MaxSegments = 10000;
 
-    
     inline bool Match(const Curve& a, const Curve& b, double tolerance,
         long& mode, double& p1, double& p2)
     {

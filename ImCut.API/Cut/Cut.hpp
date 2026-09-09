@@ -18,7 +18,8 @@ namespace ImCut::Cut
     struct Settings
     {
         int pageWidth = 1300;
-        int regmarks = 6; 
+        int regmarks = 6;
+        double registrationMarginMillimeters = 5.0;
         ClosureMode closureMode = ClosureMode::Auto;
         bool namePages = true;
         bool showSummary = true;

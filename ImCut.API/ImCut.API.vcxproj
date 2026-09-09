@@ -110,6 +110,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ColorConverter\ColorConverter.hpp" />
+    <ClInclude Include="OperationCancellation.hpp" />
     <ClInclude Include="Exports.hpp" />
     <ClInclude Include="Runtime.hpp" />
     <ClInclude Include="SettingsStore.hpp" />

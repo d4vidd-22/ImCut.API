@@ -11,15 +11,10 @@ namespace ImCut::Cut
         double minimumSpacing = 25.0;
     };
 
-    
-    
-    
-    
     inline RegistrationDensity AdaptiveRegistrationDensity(double width, double height)
     {
         if (!std::isfinite(width) || !std::isfinite(height) || width < 5 || height < 5)
             return {};
-        
         const double w = std::min(width, 100000.0), h = std::min(height, 100000.0);
         const int minimum = std::min(w, h) >= 150.0 ? 4 : 3;
         const double longSide = std::max(w, h);

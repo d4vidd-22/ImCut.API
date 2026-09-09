@@ -14,8 +14,6 @@
 
 namespace ImCut
 {
-    
-    
     class AtomicIni final
     {
     public:

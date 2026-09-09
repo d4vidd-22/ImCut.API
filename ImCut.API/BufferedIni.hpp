@@ -9,8 +9,6 @@
 
 namespace ImCut
 {
-    
-    
     class BufferedIni final
     {
         struct Less
@@ -83,7 +81,6 @@ namespace ImCut
                         const auto edit = found->second.find(key);
                         if (edit != found->second.end())
                         {
-                            
                             if (!written.contains(key)) append(key + L"=" + edit->second);
                             written[key] = L"";
                             continue;

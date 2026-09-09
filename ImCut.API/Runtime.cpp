@@ -5,6 +5,7 @@
 #include "ScopeExit.hpp"
 #include "InputLimits.hpp"
 #include "ApiBoundary.hpp"
+#include "OperationCancellation.hpp"
 
 #include "AutoBleeding/AutoBleeding.hpp"
 #include "ColorConverter/ColorConverter.hpp"
@@ -971,8 +972,6 @@ namespace ImCut
         filePath.clear();
         error.clear();
 
-        
-        
         std::vector<wchar_t> buffer(32768, L'\0');
 
         OPENFILENAMEW dialog{};
@@ -1545,9 +1544,6 @@ namespace ImCut
             request.preferredGrid =
                 preferredGrid;
 
-            
-            
-            
             return RunColorInternal(request, true, false);
         }
 
@@ -1710,9 +1706,6 @@ namespace ImCut
 
             SetRenderTimerInterval(ActiveRenderTimerMs);
 
-            
-            
-            
             if (!rendering_ && !renderPosted_ && hwnd_)
             {
                 renderPosted_ = PostMessageW(
@@ -2361,8 +2354,6 @@ namespace ImCut
                     reinterpret_cast<void**>(&dxgiDevice))) &&
                 dxgiDevice)
             {
-                
-                
                 (void)dxgiDevice->SetMaximumFrameLatency(1);
                 dxgiDevice->Release();
             }
@@ -2621,9 +2612,6 @@ namespace ImCut
             callbacks_.downloadUpdate =
                 [this]()
                 {
-                    
-                    
-                    
                     installAfterUserDownload_ = true;
                     autoUpdateInstallPosted_ = false;
                     updater_.DownloadAsync();
@@ -2744,9 +2732,6 @@ namespace ImCut
                 L"IMCUT_UPDATE_TICKET",
                 ticketPath.c_str());
 
-            
-            
-            
             {
                 std::wstring ignored;
 
@@ -2826,11 +2811,6 @@ namespace ImCut
 
         void RequestAutomaticUpdateCheck()
         {
-            
-            
-            
-            
-            
             const auto snapshot =
                 updater_.GetSnapshot();
 
@@ -2921,9 +2901,6 @@ namespace ImCut
                 return;
             }
 
-            
-            
-            
             if (snapshot.status ==
                     Updater::Status::Downloaded &&
                 !operationRunning_ &&
@@ -3032,8 +3009,6 @@ namespace ImCut
 
                 if (swapChain_)
                 {
-                    
-                    
                     (void)swapChain_->Present(
                         0,
                         0);
@@ -3097,7 +3072,6 @@ namespace ImCut
                 case UI::ClosureMode::WholeSelection: return 1;
                 case UI::ClosureMode::EachSelectedObject: return count;
                 default:
-                    
                     auto groups = selection->Shapes->FindShapes(_bstr_t(), cdrGroupShape, VARIANT_FALSE, _bstr_t());
                     const bool allGroups = groups && groups->Count == count;
                     return state_.cut.closureMode == UI::ClosureMode::EachSelectedGroup
@@ -3124,6 +3098,15 @@ namespace ImCut
                         (std::max)(
                             request.registrationMarks,
                             0);
+
+                    settings.registrationMarginMillimeters =
+                        std::isfinite(request.registrationMarginMm)
+                        ? (std::clamp)(
+                            static_cast<double>(
+                                request.registrationMarginMm),
+                            0.0,
+                            1000.0)
+                        : 5.0;
 
                     settings.namePages =
                         request.namePages;
@@ -3219,6 +3202,8 @@ namespace ImCut
                         [this, &bleedDiagnostics, &renderedProgress, &renderedTotal](
                             const AutoBleeding::ProgressInfo& info)
                         {
+                            Cancellation::ThrowIfRequested();
+
                             if (info.total > 0)
                             {
                                 state_.runtime.progress =
@@ -3227,9 +3212,6 @@ namespace ImCut
                                     static_cast<float>(
                                         info.total);
 
-                                
-                                
-                                
                                 state_.runtime.status =
                                     "Processando " +
                                     std::to_string(info.current) +
@@ -3261,6 +3243,7 @@ namespace ImCut
                             long,
                             long)
                         {
+                            Cancellation::ThrowIfRequested();
                             return true;
                         };
 
@@ -3578,14 +3561,11 @@ namespace ImCut
                     if (request.convertSpotsToRgb &&
                         request.preserveSpotAppearance)
                     {
-                        
-                        
-                        
-                        
                         for (long i = 1;
                             i <= selection->Count;
                             ++i)
                         {
+                            Cancellation::ThrowIfRequested();
                             CaptureSpotAppearanceRecursive(
                                 selection->Item[i],
                                 spotAppearanceCache);
@@ -3611,6 +3591,7 @@ namespace ImCut
                         i <= selection->Count;
                         ++i)
                     {
+                        Cancellation::ThrowIfRequested();
                         ConvertShapeRecursive(
                             selection->Item[i],
                             request,
@@ -4233,8 +4214,6 @@ namespace ImCut
                     state_,
                     storedProfiles_);
 
-            
-            
             if (signature == observedSettingsSignature_)
             {
                 settingsSavePending_ = false;
@@ -5499,9 +5478,6 @@ namespace ImCut
                             return false;
                         }
 
-                        
-                        
-                        
                         lab =
                         {
                             static_cast<double>(
@@ -5526,10 +5502,6 @@ namespace ImCut
 
             Color::Lab lab;
 
-            
-            
-            
-            
             try
             {
                 auto copy =
@@ -5549,10 +5521,6 @@ namespace ImCut
             {
             }
 
-            
-            
-            
-            
             try
             {
                 const std::wstring palette =
@@ -5595,11 +5563,6 @@ namespace ImCut
             {
             }
 
-            
-            
-            
-            
-            
             try
             {
                 auto copy =
@@ -5631,6 +5594,8 @@ namespace ImCut
             const IVGShapePtr& shape,
             SpotAppearanceCache& cache) const
         {
+            Cancellation::ThrowIfRequested();
+
             if (!shape)
                 return;
 
@@ -5655,6 +5620,7 @@ namespace ImCut
                     }
                 }
             }
+            catch (const OperationCancelled&) { throw; }
             catch (...)
             {
             }
@@ -5682,6 +5648,7 @@ namespace ImCut
                     }
                 }
             }
+            catch (const OperationCancelled&) { throw; }
             catch (...)
             {
             }
@@ -5734,6 +5701,7 @@ namespace ImCut
                     }
                 }
             }
+            catch (const OperationCancelled&) { throw; }
             catch (...)
             {
             }
@@ -5752,6 +5720,7 @@ namespace ImCut
                         cache);
                 }
             }
+            catch (const OperationCancelled&) { throw; }
             catch (...)
             {
             }
@@ -5763,6 +5732,8 @@ namespace ImCut
             ColorConversionStats& stats,
             const SpotAppearanceCache* spotAppearanceCache)
         {
+            Cancellation::ThrowIfRequested();
+
             if (!shape)
                 return 0;
 
@@ -6201,13 +6172,11 @@ namespace ImCut
             }
             else if (!actualKey.numbers.empty())
             {
-                
                 return false;
             }
 
             if (expectedKey.words.empty())
             {
-                
                 return !expectedKey.numbers.empty();
             }
 
@@ -6217,8 +6186,6 @@ namespace ImCut
             if (actualKey.words == expectedKey.words)
                 return true;
 
-            
-            
             if (expectedKey.words.size() >= 3 &&
                 actualKey.words.find(expectedKey.words) !=
                     std::wstring::npos)
@@ -6659,6 +6626,8 @@ namespace ImCut
             ColorConversionStats& stats,
             const SpotAppearanceCache* spotAppearanceCache)
         {
+            Cancellation::ThrowIfRequested();
+
             if (!color)
                 return 0;
 
@@ -6715,8 +6684,6 @@ namespace ImCut
                     }
                 }
 
-                
-                
                 if (ApplySpotTintWhite(
                     color,
                     request))
@@ -6755,9 +6722,6 @@ namespace ImCut
                                 match.rgb.g,
                                 match.rgb.b);
 
-                            
-                            
-                            
                             stats.spotAccuracy.Add(match);
                             ++stats.converted;
                             ++stats.spotAppearancePreserved;
@@ -6765,8 +6729,6 @@ namespace ImCut
                         }
                     }
 
-                    
-                    
                     color->ConvertToRGB();
 
                     if (ApplyBlackFloorToCorelRgb(
@@ -6883,10 +6845,34 @@ namespace ImCut
                 RenderFrame();
 
             HRESULT hr = E_FAIL;
+            bool cancelled = false;
+            Cancellation::OperationScope cancellationScope;
 
             try
             {
+                Cancellation::ThrowIfRequested();
                 hr = function();
+                Cancellation::ThrowIfRequested();
+            }
+            catch (const OperationCancelled&)
+            {
+                cancelled = true;
+
+                try { app_->PutEventsEnabled(VARIANT_TRUE); }
+                catch (...) {}
+                try { app_->PutOptimization(VARIANT_FALSE); }
+                catch (...) {}
+                try
+                {
+                    if (app_->ActiveWindow)
+                        app_->ActiveWindow->Refresh();
+                    app_->Refresh();
+                }
+                catch (...) {}
+
+                hr = SetError(
+                    HRESULT_FROM_WIN32(ERROR_CANCELLED),
+                    L"Operacao cancelada com Esc. O CorelDRAW foi reativado.");
             }
             catch (const _com_error& error)
             {
@@ -6927,7 +6913,7 @@ namespace ImCut
                     WideToUtf8(
                         LastErrorCopy());
 
-                if (interactive) ShowErrorMessage();
+                if (interactive && !cancelled) ShowErrorMessage();
             }
 
             operationRunning_ = false;

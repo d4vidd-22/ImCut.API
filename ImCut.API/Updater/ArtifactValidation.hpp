@@ -6,7 +6,6 @@
 
 namespace ImCut::Updater
 {
-    
     bool ValidateImage(const std::vector<std::uint8_t>& bytes, std::string& error);
     std::filesystem::path RunningModulePath();
     bool ValidateArtifact(const std::filesystem::path& file,

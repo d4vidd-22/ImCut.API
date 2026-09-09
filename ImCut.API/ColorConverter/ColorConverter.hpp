@@ -1,18 +1,11 @@
 #pragma once
 
 #include "..\Global.hpp"
-#include <exception>
+#include "..\OperationCancellation.hpp"
 
 namespace ImCut::Color
 {
-    class OperationCancelled final : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Conversao cancelada com Esc. As cores ja concluidas foram mantidas; use Desfazer para reverter o lote.";
-        }
-    };
+    using OperationCancelled = ImCut::OperationCancelled;
     enum class RenderingIntent : std::uint32_t
     {
         Perceptual = 0,

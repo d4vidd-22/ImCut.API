@@ -52,6 +52,7 @@ namespace ImCut::UI
     {
         int pageWidthMm = 1352;
         int registrationMarks = 20;
+        float registrationMarginMm = 5.0f;
         ClosureMode closureMode = ClosureMode::Automatic;
         bool namePages = true;
         bool showSummary = true;

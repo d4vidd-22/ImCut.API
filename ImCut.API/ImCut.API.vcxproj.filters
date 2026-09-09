@@ -24,6 +24,7 @@
     <ClInclude Include="Updater\Updater.hpp" />
     <ClInclude Include="Version.hpp" />
     <ClInclude Include="ScopeExit.hpp" />
+    <ClInclude Include="OperationCancellation.hpp" />
     <ClInclude Include="ApiBoundary.hpp" />
     <ClInclude Include="Updater\ArtifactValidation.hpp" />
     <ClInclude Include="InputLimits.hpp" />

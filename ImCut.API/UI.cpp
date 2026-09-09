@@ -1129,9 +1129,6 @@ namespace ImCut::UI
         {
             if (state.runtime.busy)
             {
-                
-                
-                
                 if (state.runtime.status.rfind(
                     "Processando ",
                     0) == 0)
@@ -1551,7 +1548,7 @@ namespace ImCut::UI
 
             if (ImGui::BeginTable(
                 "##CutOutput",
-                2,
+                3,
                 ImGuiTableFlags_SizingStretchSame,
                 ImVec2(
                     -1.0f,
@@ -1564,6 +1561,11 @@ namespace ImCut::UI
 
                 ImGui::TableSetupColumn(
                     "B",
+                    ImGuiTableColumnFlags_WidthStretch,
+                    1.0f);
+
+                ImGui::TableSetupColumn(
+                    "C",
                     ImGuiTableColumnFlags_WidthStretch,
                     1.0f);
 
@@ -1597,6 +1599,25 @@ namespace ImCut::UI
                     -1.0f);
 
                 TextMuted(T(state, "Automáticas", "Automatic"));
+
+                ImGui::TableNextColumn();
+
+                FieldLabel(
+                    T(
+                        state,
+                        "Margem das marcas",
+                        "Mark margin"),
+                    "mm");
+
+                ImGui::SetNextItemWidth(
+                    -1.0f);
+
+                ImGui::InputFloat(
+                    "##RegistrationMargin",
+                    &state.cut.registrationMarginMm,
+                    0.0f,
+                    0.0f,
+                    "%.1f");
                 ImGui::EndTable();
             }
 
@@ -1605,9 +1626,18 @@ namespace ImCut::UI
                     state.cut.pageWidthMm,
                     1);
 
+            if (!std::isfinite(state.cut.registrationMarginMm))
+                state.cut.registrationMarginMm = 5.0f;
+
+            state.cut.registrationMarginMm =
+                std::clamp(
+                    state.cut.registrationMarginMm,
+                    0.0f,
+                    1000.0f);
+
             TextMuted(T(state,
-                "A quantidade acompanha o tamanho. Cantos e áreas livres têm prioridade.",
-                "Count follows page size. Corners and open areas come first."));
+                "A margem afasta as marcas da borda. A âncora inferior direita continua encostada.",
+                "The margin moves marks from the edge. The bottom-right anchor stays flush."));
 
             SectionTitle(
                 T(
@@ -3208,8 +3238,6 @@ namespace ImCut::UI
                         state.color.colorMappings.size()) &&
                 state.color.colorMappings.size() < 64)
             {
-                
-                
 #pragma warning(suppress: 26820)
                 const auto copy =
                     state.color.colorMappings[

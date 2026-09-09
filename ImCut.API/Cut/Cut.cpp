@@ -1,6 +1,7 @@
 #define NOMINMAX 1
 #include "Cut.hpp"
 #include "RegistrationLayout.hpp"
+#include "../OperationCancellation.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -49,13 +50,18 @@ namespace ImCut::Cut
         struct RegmarkSettings
         {
             double radius = 2.5;
+            double hardArtworkMargin = 0.75;
             double artworkMargin = 5.0;
             double preferredSpacing = 60.0;
             double absoluteMinSpacing = 25.0;
-            double candidateStep = 4.0;
+            double physicalMinSpacing = 6.0;
+            double candidateStep = 0.5;
             double spacingRelaxFactor = 0.88;
             double pageInset = 2.5;
-            std::size_t maxCandidates = 90000;
+            double corridorProbeDistance = 40.0;
+            bool forceBottomRightAnchor = true;
+            std::size_t maxCandidates = 2000000;
+            std::size_t maxSelectionCandidates = 120000;
         };
 
         struct RegmarkPlan
@@ -1226,11 +1232,9 @@ namespace ImCut::Cut
             double translateX, double translateY, const std::unordered_set<long>& cutIds, int depth = 0)
         {
             if (!shape) throw std::runtime_error("Unable to inspect closure artwork.");
-            if (cutIds.contains(shape->StaticID)) return; 
+            if (cutIds.contains(shape->StaticID)) return;
             if (depth < 64 && shape->Type == cdrGroupShape)
             {
-                
-                
                 auto effects = shape->Effects;
                 if (!effects || effects->Count == 0)
                 {
@@ -1313,7 +1317,6 @@ namespace ImCut::Cut
                     }
                 }
 
-                
                 const long selectedCount = range->Count;
                 for (long i = 1; i <= selectedCount; ++i)
                 {
@@ -1324,7 +1327,6 @@ namespace ImCut::Cut
                 return snapshot;
             }
 
-            
             snapshot.collision.fromCutContours = false;
             snapshot.collision.sourceShapeCount =
                 static_cast<std::size_t>(
@@ -1837,7 +1839,8 @@ namespace ImCut::Cut
             CandidateGrid(
                 const Bounds& page,
                 const CollisionGeometry& collision,
-                double hotArea,
+                double hardArea,
+                double preferredArea,
                 const RegmarkSettings& settings)
             {
                 const double inset =
@@ -1855,7 +1858,7 @@ namespace ImCut::Cut
 
                 const double availableWidth = maxX_ - minX_;
                 const double availableHeight = maxY_ - minY_;
-                double step = std::max(1.0, settings.candidateStep);
+                double step = std::max(0.5, settings.candidateStep);
 
                 const auto computeCount = [](double size, double gridStep)
                     {
@@ -1893,10 +1896,12 @@ namespace ImCut::Cut
 
                 if (settings.maxCandidates > 0)
                 {
-                    
-                    
                     nx_ = std::min(nx_, settings.maxCandidates);
-                    ny_ = std::min(ny_, settings.maxCandidates / nx_);
+                    ny_ = std::min(
+                        ny_,
+                        std::max(
+                            std::size_t{ 1 },
+                            settings.maxCandidates / nx_));
                 }
 
                 x_.resize(nx_);
@@ -1930,9 +1935,24 @@ namespace ImCut::Cut
                     x_,
                     y_,
                     collision,
-                    hotArea);
+                    hardArea);
 
                 blocked_ = maskBuilder.Build();
+
+                BlockedMaskBuilder preferredMaskBuilder(
+                    x_,
+                    y_,
+                    collision,
+                    std::max(hardArea, preferredArea));
+
+                preferredBlocked_ =
+                    preferredMaskBuilder.Build();
+
+                BuildCorridorScores(
+                    settings.corridorProbeDistance);
+
+                BuildSelectionCandidates(
+                    settings.maxSelectionCandidates);
 
                 selected_.assign(total, 0);
                 nearestMarkDistanceSq_.assign(
@@ -2024,46 +2044,52 @@ namespace ImCut::Cut
                 return nearestMarkDistanceSq_[flatIndex];
             }
 
+            [[nodiscard]] double CorridorScore(
+                std::size_t flatIndex) const noexcept
+            {
+                return
+                    static_cast<double>(
+                        corridorScore_[flatIndex]) /
+                    2.0;
+            }
+
+            [[nodiscard]] bool HasPreferredClearance(
+                std::size_t flatIndex) const noexcept
+            {
+                return preferredBlocked_[flatIndex] == 0;
+            }
+
+            [[nodiscard]] const std::vector<std::size_t>& Candidates() const noexcept
+            {
+                return selectionCandidates_;
+            }
+
             void AddMark(
                 const Point2D& mark) noexcept
             {
                 ++markCount_;
 
-                for (std::size_t iy = 0;
-                    iy < ny_;
-                    ++iy)
+                for (const std::size_t flatIndex :
+                    selectionCandidates_)
                 {
+                    const std::size_t iy = flatIndex / nx_;
+                    const std::size_t ix = flatIndex % nx_;
                     const double dy =
                         y_[iy] - mark.y;
                     const double dySq =
                         dy * dy;
+                    const double dx =
+                        x_[ix] - mark.x;
 
-                    const std::size_t row =
-                        iy * nx_;
+                    const double distanceSq =
+                        dx * dx + dySq;
 
-                    for (std::size_t ix = 0;
-                        ix < nx_;
-                        ++ix)
-                    {
-                        const std::size_t flatIndex =
-                            row + ix;
+                    double& cached =
+                        nearestMarkDistanceSq_[
+                            flatIndex];
 
-                        if (blocked_[flatIndex] != 0)
-                            continue;
-
-                        const double dx =
-                            x_[ix] - mark.x;
-
-                        const double distanceSq =
-                            dx * dx + dySq;
-
-                        double& cached =
-                            nearestMarkDistanceSq_[
-                                flatIndex];
-
-                        if (distanceSq < cached)
-                            cached = distanceSq;
-                    }
+                    if (distanceSq < cached)
+                        cached = distanceSq;
                 }
             }
 
@@ -2080,7 +2106,7 @@ namespace ImCut::Cut
 
             [[nodiscard]] std::size_t EvaluatedCandidateCount() const noexcept
             {
-                return Total();
+                return selectionCandidates_.size();
             }
 
             [[nodiscard]] std::size_t BlockedCandidateCount() const noexcept
@@ -2089,6 +2115,216 @@ namespace ImCut::Cut
             }
 
         private:
+            void BuildCorridorScores(
+                double probeDistance)
+            {
+                const std::size_t total = Total();
+                corridorScore_.assign(total, 0);
+
+                if (total == 0 ||
+                    probeDistance <= kEpsilon)
+                {
+                    return;
+                }
+
+                std::vector<float> firstDistance(
+                    total,
+                    std::numeric_limits<float>::infinity());
+
+                const double gridStepX =
+                    nx_ > 1 ? x_[1] - x_[0] : 1.0;
+
+                const double gridStepY =
+                    ny_ > 1 ? y_[1] - y_[0] : 1.0;
+
+                const double balanceTolerance =
+                    std::max(
+                        1.0,
+                        std::max(gridStepX, gridStepY) * 1.5);
+
+                for (std::size_t iy = 0; iy < ny_; ++iy)
+                {
+                    const std::size_t row = iy * nx_;
+                    std::size_t lastBlocked = nx_;
+
+                    for (std::size_t ix = 0; ix < nx_; ++ix)
+                    {
+                        const std::size_t index = row + ix;
+
+                        if (blocked_[index] != 0)
+                        {
+                            lastBlocked = ix;
+                        }
+                        else if (lastBlocked != nx_)
+                        {
+                            const double distance =
+                                x_[ix] - x_[lastBlocked];
+
+                            if (distance <= probeDistance)
+                                firstDistance[index] =
+                                    static_cast<float>(distance);
+                        }
+                    }
+
+                    std::size_t nextBlocked = nx_;
+
+                    for (std::size_t ix = nx_; ix-- > 0;)
+                    {
+                        const std::size_t index = row + ix;
+
+                        if (blocked_[index] != 0)
+                        {
+                            nextBlocked = ix;
+                            continue;
+                        }
+
+                        if (nextBlocked == nx_ ||
+                            !std::isfinite(firstDistance[index]))
+                        {
+                            continue;
+                        }
+
+                        const double secondDistance =
+                            x_[nextBlocked] - x_[ix];
+
+                        if (secondDistance > probeDistance)
+                            continue;
+
+                        const double first =
+                            firstDistance[index];
+
+                        if (std::abs(first - secondDistance) <=
+                            std::max(
+                                balanceTolerance,
+                                (first + secondDistance) * 0.30))
+                        {
+                            ++corridorScore_[index];
+                        }
+                    }
+                }
+
+                std::fill(
+                    firstDistance.begin(),
+                    firstDistance.end(),
+                    std::numeric_limits<float>::infinity());
+
+                for (std::size_t ix = 0; ix < nx_; ++ix)
+                {
+                    std::size_t lastBlocked = ny_;
+
+                    for (std::size_t iy = 0; iy < ny_; ++iy)
+                    {
+                        const std::size_t index = iy * nx_ + ix;
+
+                        if (blocked_[index] != 0)
+                        {
+                            lastBlocked = iy;
+                        }
+                        else if (lastBlocked != ny_)
+                        {
+                            const double distance =
+                                y_[iy] - y_[lastBlocked];
+
+                            if (distance <= probeDistance)
+                                firstDistance[index] =
+                                    static_cast<float>(distance);
+                        }
+                    }
+
+                    std::size_t nextBlocked = ny_;
+
+                    for (std::size_t iy = ny_; iy-- > 0;)
+                    {
+                        const std::size_t index = iy * nx_ + ix;
+
+                        if (blocked_[index] != 0)
+                        {
+                            nextBlocked = iy;
+                            continue;
+                        }
+
+                        if (nextBlocked == ny_ ||
+                            !std::isfinite(firstDistance[index]))
+                        {
+                            continue;
+                        }
+
+                        const double secondDistance =
+                            y_[nextBlocked] - y_[iy];
+
+                        if (secondDistance > probeDistance)
+                            continue;
+
+                        const double first =
+                            firstDistance[index];
+
+                        if (std::abs(first - secondDistance) <=
+                            std::max(
+                                balanceTolerance,
+                                (first + secondDistance) * 0.30))
+                        {
+                            ++corridorScore_[index];
+                        }
+                    }
+                }
+            }
+
+            void BuildSelectionCandidates(
+                std::size_t preferredBudget)
+            {
+                selectionCandidates_.clear();
+
+                if (Total() == 0)
+                    return;
+
+                std::size_t stride = 1;
+
+                if (preferredBudget > 0 &&
+                    Total() > preferredBudget)
+                {
+                    stride =
+                        std::max(
+                            std::size_t{ 1 },
+                            static_cast<std::size_t>(
+                                std::ceil(
+                                    std::sqrt(
+                                        static_cast<double>(Total()) /
+                                        static_cast<double>(preferredBudget)))));
+                }
+
+                selectionCandidates_.reserve(
+                    std::min(Total(), preferredBudget * 2));
+
+                for (std::size_t iy = 0; iy < ny_; ++iy)
+                {
+                    for (std::size_t ix = 0; ix < nx_; ++ix)
+                    {
+                        const std::size_t index =
+                            FlatIndex(ix, iy);
+
+                        if (blocked_[index] != 0)
+                            continue;
+
+                        const bool coarseSample =
+                            stride <= 1 ||
+                            (ix % stride == 0 &&
+                                iy % stride == 0) ||
+                            ix == 0 || iy == 0 ||
+                            ix + 1 == nx_ || iy + 1 == ny_;
+
+                        const bool tightSpace =
+                            preferredBlocked_[index] != 0;
+
+                        if (coarseSample ||
+                            tightSpace ||
+                            corridorScore_[index] != 0)
+                        {
+                            selectionCandidates_.push_back(index);
+                        }
+                    }
+                }
+            }
+
             double minX_ = 0.0;
             double maxX_ = 0.0;
             double minY_ = 0.0;
@@ -2098,8 +2334,11 @@ namespace ImCut::Cut
             std::vector<double> x_;
             std::vector<double> y_;
             std::vector<std::uint8_t> blocked_;
+            std::vector<std::uint8_t> preferredBlocked_;
+            std::vector<std::uint8_t> corridorScore_;
             std::vector<std::uint8_t> selected_;
             std::vector<double> nearestMarkDistanceSq_;
+            std::vector<std::size_t> selectionCandidates_;
             std::size_t markCount_ = 0;
             std::size_t validCandidateCount_ = 0;
             std::size_t blockedCandidateCount_ = 0;
@@ -2318,23 +2557,362 @@ namespace ImCut::Cut
             }
         }
 
-        [[nodiscard]] std::size_t FindFarthestCandidate(
-            CandidateGrid& grid,
-            double requiredSpacingSq)
+        struct SpatialRegions
         {
-            if (grid.Empty())
-                return std::numeric_limits<std::size_t>::max();
+            Bounds page;
+            std::size_t columns = 1;
+            std::size_t rows = 1;
+            double cellWidth = 1.0;
+            double cellHeight = 1.0;
 
-            const bool hasMarks = grid.HasMarks();
-            std::size_t bestIndex = std::numeric_limits<std::size_t>::max();
-            double bestDistanceSq = -1.0;
-
-            for (std::size_t flatIndex = 0;
-                flatIndex < grid.Total();
-                ++flatIndex)
+            SpatialRegions(
+                const Bounds& bounds,
+                std::size_t requestedCount)
+                : page(bounds)
             {
-                if (grid.IsSelected(flatIndex))
+                const double width =
+                    std::max(kEpsilon, page.Width());
+
+                const double height =
+                    std::max(kEpsilon, page.Height());
+
+                const double aspect = width / height;
+
+                columns =
+                    std::max(
+                        std::size_t{ 1 },
+                        static_cast<std::size_t>(
+                            std::llround(
+                                std::sqrt(
+                                    static_cast<double>(
+                                        std::max(
+                                            std::size_t{ 1 },
+                                            requestedCount)) *
+                                    aspect))));
+
+                columns =
+                    std::min(
+                        columns,
+                        std::max(
+                            std::size_t{ 1 },
+                            requestedCount));
+
+                rows =
+                    std::max(
+                        std::size_t{ 1 },
+                        (requestedCount + columns - 1) /
+                        columns);
+
+                cellWidth = width /
+                    static_cast<double>(columns);
+
+                cellHeight = height /
+                    static_cast<double>(rows);
+            }
+
+            [[nodiscard]] std::size_t Count() const noexcept
+            {
+                return columns * rows;
+            }
+
+            [[nodiscard]] double Diagonal() const noexcept
+            {
+                return std::hypot(
+                    page.Width(),
+                    page.Height());
+            }
+
+            [[nodiscard]] std::size_t Index(
+                const Point2D& point) const noexcept
+            {
+                const std::size_t column =
+                    std::min(
+                        columns - 1,
+                        static_cast<std::size_t>(
+                            std::max(
+                                0.0,
+                                std::floor(
+                                    (point.x - page.left) /
+                                    cellWidth))));
+
+                const std::size_t row =
+                    std::min(
+                        rows - 1,
+                        static_cast<std::size_t>(
+                            std::max(
+                                0.0,
+                                std::floor(
+                                    (point.y - page.bottom) /
+                                    cellHeight))));
+
+                return row * columns + column;
+            }
+
+            [[nodiscard]] Point2D Center(
+                std::size_t index) const noexcept
+            {
+                const std::size_t column =
+                    index % columns;
+
+                const std::size_t row =
+                    index / columns;
+
+                return
+                {
+                    page.left +
+                        (static_cast<double>(column) + 0.5) *
+                        cellWidth,
+                    page.bottom +
+                        (static_cast<double>(row) + 0.5) *
+                        cellHeight
+                };
+            }
+
+            [[nodiscard]] double CenteringScore(
+                std::size_t index,
+                const Point2D& point) const noexcept
+            {
+                const Point2D center = Center(index);
+                const double halfDiagonal =
+                    std::max(
+                        kEpsilon,
+                        0.5 * std::hypot(
+                            cellWidth,
+                            cellHeight));
+
+                return
+                    1.0 -
+                    std::clamp(
+                        std::sqrt(
+                            DistanceSq(
+                                point,
+                                center)) /
+                        halfDiagonal,
+                        0.0,
+                        1.0);
+            }
+
+            [[nodiscard]] double InteriorScore(
+                const Point2D& point) const noexcept
+            {
+                const double edgeDistance =
+                    std::min(
+                        {
+                            point.x - page.left,
+                            page.right - point.x,
+                            point.y - page.bottom,
+                            page.top - point.y
+                        });
+
+                const double scale =
+                    std::max(
+                        kEpsilon,
+                        std::min(
+                            page.Width(),
+                            page.Height()) *
+                        0.25);
+
+                return
+                    std::clamp(
+                        edgeDistance / scale,
+                        0.0,
+                        1.0);
+            }
+        };
+
+        [[nodiscard]] std::size_t FindBestTightCorridorCandidate(
+            CandidateGrid& grid,
+            const SpatialRegions& regions,
+            double physicalSpacing,
+            double preferredSpacing)
+        {
+            const double requiredSpacingSq =
+                physicalSpacing * physicalSpacing;
+            std::size_t bestIndex =
+                std::numeric_limits<std::size_t>::max();
+            double bestScore =
+                -std::numeric_limits<double>::infinity();
+            std::size_t inspected = 0;
+
+            for (const std::size_t flatIndex : grid.Candidates())
+            {
+                Cancellation::Checkpoint(inspected++);
+
+                if (grid.IsSelected(flatIndex) ||
+                    !grid.IsValid(flatIndex) ||
+                    grid.HasPreferredClearance(flatIndex) ||
+                    grid.CorridorScore(flatIndex) <= 0.0)
+                {
                     continue;
+                }
+
+                const double spacingSq = grid.SpacingSq(flatIndex);
+                if (grid.HasMarks() &&
+                    spacingSq + kEpsilon < requiredSpacingSq)
+                {
+                    continue;
+                }
+
+                const Point2D point = grid.Position(flatIndex);
+                const double spacing = grid.HasMarks()
+                    ? std::clamp(
+                        std::sqrt(spacingSq) /
+                            std::max(preferredSpacing, regions.Diagonal() * 0.55),
+                        0.0,
+                        1.0)
+                    : 0.5;
+                const double score =
+                    grid.CorridorScore(flatIndex) * 0.55 +
+                    regions.InteriorScore(point) * 0.25 +
+                    spacing * 0.20;
+
+                if (score > bestScore + kEpsilon ||
+                    (std::abs(score - bestScore) <= kEpsilon &&
+                        flatIndex < bestIndex))
+                {
+                    bestIndex = flatIndex;
+                    bestScore = score;
+                }
+            }
+
+            return bestIndex;
+        }
+
+        [[nodiscard]] std::size_t FindBestRegionalCandidate(
+            CandidateGrid& grid,
+            const SpatialRegions& regions,
+            const std::vector<std::uint8_t>& servedRegions,
+            double physicalSpacing,
+            double preferredSpacing,
+            bool prioritizeGeometry)
+        {
+            const bool hasMarks = grid.HasMarks();
+            const bool scoreSpacing = hasMarks && !prioritizeGeometry;
+            const double physicalSpacingSq =
+                physicalSpacing * physicalSpacing;
+
+            std::size_t bestIndex =
+                std::numeric_limits<std::size_t>::max();
+
+            double bestScore =
+                -std::numeric_limits<double>::infinity();
+
+            double bestSpacingSq = -1.0;
+            std::size_t inspected = 0;
+
+            for (const std::size_t flatIndex :
+                grid.Candidates())
+            {
+                Cancellation::Checkpoint(inspected++);
+
+                if (grid.IsSelected(flatIndex) ||
+                    !grid.IsValid(flatIndex))
+                {
+                    continue;
+                }
+
+                const Point2D point =
+                    grid.Position(flatIndex);
+
+                const std::size_t region =
+                    regions.Index(point);
+
+                if (servedRegions[region] != 0)
+                    continue;
+
+                const double spacingSq =
+                    grid.SpacingSq(flatIndex);
+
+                if (hasMarks &&
+                    spacingSq + kEpsilon < physicalSpacingSq)
+                {
+                    continue;
+                }
+
+                const double spacingScore =
+                    scoreSpacing
+                    ? std::clamp(
+                        std::sqrt(spacingSq) /
+                        std::max(
+                            preferredSpacing,
+                            regions.Diagonal() * 0.55),
+                        0.0,
+                        1.0)
+                    : 0.5;
+
+                const double corridor =
+                    grid.CorridorScore(flatIndex);
+
+                const double preferredClearance =
+                    grid.HasPreferredClearance(flatIndex)
+                    ? 1.0
+                    : 0.0;
+
+                const double centering =
+                    regions.CenteringScore(
+                        region,
+                        point);
+
+                const double interior =
+                    regions.InteriorScore(point);
+
+                const double score =
+                    scoreSpacing
+                    ? spacingScore * 0.52 +
+                        corridor * 0.20 +
+                        centering * 0.12 +
+                        preferredClearance * 0.08 +
+                        interior * 0.08
+                    : corridor * 0.30 +
+                        centering * 0.18 +
+                        preferredClearance * 0.12 +
+                        interior * 0.40;
+
+                if (score > bestScore + kEpsilon ||
+                    (std::abs(score - bestScore) <= kEpsilon &&
+                        (spacingSq > bestSpacingSq + kEpsilon ||
+                            (std::abs(spacingSq - bestSpacingSq) <= kEpsilon &&
+                                flatIndex < bestIndex))))
+                {
+                    bestIndex = flatIndex;
+                    bestScore = score;
+                    bestSpacingSq = spacingSq;
+                }
+            }
+
+            return bestIndex;
+        }
+
+        [[nodiscard]] std::size_t FindBestWeightedCandidate(
+            CandidateGrid& grid,
+            const SpatialRegions& regions,
+            const std::vector<std::size_t>& regionCounts,
+            double requiredSpacing,
+            double preferredSpacing)
+        {
+            const bool hasMarks = grid.HasMarks();
+            const double requiredSpacingSq =
+                requiredSpacing * requiredSpacing;
+
+            std::size_t bestIndex =
+                std::numeric_limits<std::size_t>::max();
+
+            double bestScore =
+                -std::numeric_limits<double>::infinity();
+
+            double bestSpacingSq = -1.0;
+            std::size_t inspected = 0;
+
+            for (const std::size_t flatIndex :
+                grid.Candidates())
+            {
+                Cancellation::Checkpoint(inspected++);
+
+                if (grid.IsSelected(flatIndex) ||
+                    !grid.IsValid(flatIndex))
+                {
+                    continue;
+                }
 
                 const double distanceSq =
                     grid.SpacingSq(flatIndex);
@@ -2346,20 +2924,46 @@ namespace ImCut::Cut
                     continue;
                 }
 
-                if (bestIndex != std::numeric_limits<std::size_t>::max() &&
-                    distanceSq <= bestDistanceSq + kEpsilon)
+                const Point2D point =
+                    grid.Position(flatIndex);
+
+                const std::size_t region =
+                    regions.Index(point);
+
+                const double spacingScore =
+                    hasMarks
+                    ? std::clamp(
+                        std::sqrt(distanceSq) /
+                        std::max(
+                            preferredSpacing,
+                            regions.Diagonal() * 0.55),
+                        0.0,
+                        1.0)
+                    : 0.5;
+
+                const double regionNeed =
+                    1.0 /
+                    (1.0 +
+                        static_cast<double>(
+                            regionCounts[region]));
+
+                const double score =
+                    spacingScore * 0.62 +
+                    grid.CorridorScore(flatIndex) * 0.18 +
+                    regionNeed * 0.10 +
+                    (grid.HasPreferredClearance(flatIndex) ? 0.06 : 0.0) +
+                    regions.InteriorScore(point) * 0.04;
+
+                if (score > bestScore + kEpsilon ||
+                    (std::abs(score - bestScore) <= kEpsilon &&
+                        (distanceSq > bestSpacingSq + kEpsilon ||
+                            (std::abs(distanceSq - bestSpacingSq) <= kEpsilon &&
+                                flatIndex < bestIndex))))
                 {
-                    continue;
+                    bestIndex = flatIndex;
+                    bestScore = score;
+                    bestSpacingSq = distanceSq;
                 }
-
-                if (!grid.IsValid(flatIndex))
-                    continue;
-
-                if (!hasMarks)
-                    return flatIndex;
-
-                bestIndex = flatIndex;
-                bestDistanceSq = distanceSq;
             }
 
             return bestIndex;
@@ -2402,18 +3006,63 @@ namespace ImCut::Cut
 
             result.marks.reserve(static_cast<std::size_t>(requestedCount));
 
+            Cancellation::ThrowIfRequested();
+
+            const Point2D bottomRightAnchor
+            {
+                page.right - settings.radius,
+                page.bottom + settings.radius
+            };
+
+            const double hardArea =
+                settings.radius +
+                std::max(
+                    0.0,
+                    settings.hardArtworkMargin);
+
+            const bool anchorFitsPage =
+                bottomRightAnchor.x - settings.radius >= page.left - kEpsilon &&
+                bottomRightAnchor.x + settings.radius <= page.right + kEpsilon &&
+                bottomRightAnchor.y - settings.radius >= page.bottom - kEpsilon &&
+                bottomRightAnchor.y + settings.radius <= page.top + kEpsilon;
+
+            const bool useBottomRightAnchor =
+                settings.forceBottomRightAnchor &&
+                anchorFitsPage &&
+                !PointBlockedByGeometry(
+                    collision,
+                    bottomRightAnchor,
+                    hardArea);
+
             CandidateGrid grid(
                 page,
                 collision,
-                settings.radius + settings.artworkMargin,
+                hardArea,
+                settings.radius +
+                    std::max(
+                        settings.hardArtworkMargin,
+                        settings.artworkMargin),
                 settings);
+
+            Cancellation::ThrowIfRequested();
+
+            if (useBottomRightAnchor)
+                result.marks.push_back(bottomRightAnchor);
 
             if (grid.Empty())
                 return result;
 
-            const double absoluteMinSpacing =
+            if (useBottomRightAnchor)
+                grid.AddMark(bottomRightAnchor);
+
+            const double physicalMinSpacing =
                 std::max(
                     settings.radius * 2.0,
+                    settings.physicalMinSpacing);
+
+            const double absoluteMinSpacing =
+                std::max(
+                    physicalMinSpacing,
                     settings.absoluteMinSpacing);
 
             const double preferredSpacing =
@@ -2426,49 +3075,88 @@ namespace ImCut::Cut
                 0.5,
                 0.99);
 
-            
-            
-            const double inset = std::max(settings.radius, settings.pageInset);
-            const Point2D corners[] = {
-                {page.right - inset, page.bottom + inset},
-                {page.left + inset, page.top - inset},
-                {page.left + inset, page.bottom + inset},
-                {page.right - inset, page.top - inset}
-            };
-            for (const auto& target : corners)
-            {
-                if (result.marks.size() >= static_cast<std::size_t>(requestedCount)) break;
-                const auto candidate = FindNearestCandidateWithRelaxation(
-                    grid, target, preferredSpacing, absoluteMinSpacing, relaxFactor);
-                if (candidate != std::numeric_limits<std::size_t>::max())
-                    CommitCandidate(grid, candidate, result);
-            }
-
             const std::size_t requested = static_cast<std::size_t>(requestedCount);
-            if (requested > result.marks.size())
+
+            const SpatialRegions regions(
+                page,
+                requested);
+
+            std::vector<std::uint8_t> servedRegions(
+                regions.Count(),
+                0);
+
+            std::vector<std::size_t> regionCounts(
+                regions.Count(),
+                0);
+
+            if (result.marks.size() < requested)
             {
-                const Point2D center{
-                    (page.left + page.right) * 0.5,
-                    (page.bottom + page.top) * 0.5
-                };
-                const auto candidate = FindNearestCandidateWithRelaxation(
-                    grid, center, preferredSpacing, absoluteMinSpacing, relaxFactor);
-                if (candidate != std::numeric_limits<std::size_t>::max())
-                    CommitCandidate(grid, candidate, result);
+                const std::size_t corridorIndex =
+                    FindBestTightCorridorCandidate(
+                        grid,
+                        regions,
+                        physicalMinSpacing,
+                        preferredSpacing);
+
+                if (corridorIndex !=
+                    std::numeric_limits<std::size_t>::max())
+                {
+                    const std::size_t region =
+                        regions.Index(grid.Position(corridorIndex));
+                    CommitCandidate(grid, corridorIndex, result);
+                    servedRegions[region] = 1;
+                    ++regionCounts[region];
+                }
             }
 
-            
-            
-            
-            while (result.marks.size() < static_cast<std::size_t>(requestedCount))
+            while (result.marks.size() < requested)
             {
+                Cancellation::ThrowIfRequested();
+
+                const std::size_t selectedIndex =
+                    FindBestRegionalCandidate(
+                        grid,
+                        regions,
+                        servedRegions,
+                        physicalMinSpacing,
+                        preferredSpacing,
+                        result.marks.size() ==
+                            (useBottomRightAnchor ? 1u : 0u));
+
+                if (selectedIndex ==
+                    std::numeric_limits<std::size_t>::max())
+                {
+                    break;
+                }
+
+                const std::size_t region =
+                    regions.Index(
+                        grid.Position(selectedIndex));
+
+                CommitCandidate(
+                    grid,
+                    selectedIndex,
+                    result);
+
+                servedRegions[region] = 1;
+                ++regionCounts[region];
+            }
+
+            while (result.marks.size() < requested)
+            {
+                Cancellation::ThrowIfRequested();
+
                 double requiredSpacing = preferredSpacing;
                 std::size_t selectedIndex = std::numeric_limits<std::size_t>::max();
 
                 for (;;)
                 {
-                    selectedIndex = FindFarthestCandidate(
-                        grid, requiredSpacing * requiredSpacing);
+                    selectedIndex = FindBestWeightedCandidate(
+                        grid,
+                        regions,
+                        regionCounts,
+                        requiredSpacing,
+                        preferredSpacing);
 
                     if (selectedIndex != std::numeric_limits<std::size_t>::max() ||
                         requiredSpacing <= absoluteMinSpacing + kEpsilon)
@@ -2487,7 +3175,16 @@ namespace ImCut::Cut
                 if (selectedIndex == std::numeric_limits<std::size_t>::max())
                     break;
 
-                CommitCandidate(grid, selectedIndex, result);
+                const std::size_t region =
+                    regions.Index(
+                        grid.Position(selectedIndex));
+
+                CommitCandidate(
+                    grid,
+                    selectedIndex,
+                    result);
+
+                ++regionCounts[region];
             }
 
             result.validCandidateCount = grid.ValidCandidateCount();
@@ -2613,6 +3310,8 @@ namespace ImCut::Cut
             IVGPagePtr& printPageOut,
             IVGPagePtr& cutPageOut)
         {
+            Cancellation::ThrowIfRequested();
+
             if (!app || !doc || !range || range->Count <= 0)
                 throw std::runtime_error("Invalid closure.");
 
@@ -2623,8 +3322,6 @@ namespace ImCut::Cut
             const double pageHeight =
                 range->SizeHeight;
 
-            
-            
             constexpr double minimumPageDimensionMm = 0.001;
             if (!std::isfinite(pageWidth) || !std::isfinite(pageHeight) ||
                 pageWidth < minimumPageDimensionMm || pageHeight < minimumPageDimensionMm)
@@ -2725,13 +3422,28 @@ namespace ImCut::Cut
 
             RegmarkSettings markSettings;
             markSettings.radius = 2.5;
+            markSettings.hardArtworkMargin = 0.75;
             markSettings.artworkMargin = 5.0;
             markSettings.preferredSpacing = 60.0;
             markSettings.absoluteMinSpacing = 25.0;
-            markSettings.candidateStep = 4.0;
+            markSettings.physicalMinSpacing = 6.0;
+            markSettings.candidateStep = 0.5;
             markSettings.spacingRelaxFactor = 0.88;
-            markSettings.pageInset = markSettings.radius;
-            markSettings.maxCandidates = 90000;
+            const double requestedMargin =
+                std::isfinite(
+                    publicSettings.registrationMarginMillimeters)
+                ? std::clamp(
+                    publicSettings.registrationMarginMillimeters,
+                    0.0,
+                    1000.0)
+                : 5.0;
+
+            markSettings.pageInset =
+                markSettings.radius + requestedMargin;
+            markSettings.corridorProbeDistance = 40.0;
+            markSettings.forceBottomRightAnchor = true;
+            markSettings.maxCandidates = 2000000;
+            markSettings.maxSelectionCandidates = 120000;
             const auto density = AdaptiveRegistrationDensity(pageWidth, pageHeight);
             markSettings.preferredSpacing = density.preferredSpacing;
             markSettings.absoluteMinSpacing = density.minimumSpacing;
@@ -2855,8 +3567,6 @@ namespace ImCut::Cut
                 static_cast<int>(
                     plan.marks.size());
 
-            
-            
             if (plan.marks.size() < 3) ++stats.warnings;
 
             const auto documentEnd =
@@ -2920,6 +3630,8 @@ namespace ImCut::Cut
         const auto operationStart = std::chrono::steady_clock::now();
         bool rollbackFailed = false;
         bool rollbackPerformed = false;
+
+        Cancellation::ThrowIfRequested();
 
         if (!spApp)
         {
@@ -3015,6 +3727,8 @@ namespace ImCut::Cut
                     i < closures.size();
                     ++i)
                 {
+                    Cancellation::ThrowIfRequested();
+
                     IVGPagePtr printPage;
                     IVGPagePtr cutPage;
 
@@ -3093,6 +3807,10 @@ namespace ImCut::Cut
             }
 
             return result;
+        }
+        catch (const OperationCancelled&)
+        {
+            throw;
         }
         catch (const _com_error& error)
         {

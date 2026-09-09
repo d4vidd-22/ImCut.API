@@ -138,8 +138,6 @@ namespace ImCut
         {
             if (std::wcscmp(key, L"SpotBlacklistNames") == 0)
             {
-                
-                
                 auto aliases = value;
                 std::replace(aliases.begin(), aliases.end(), L'\r', L'|');
                 std::replace(aliases.begin(), aliases.end(), L'\n', L'|');
@@ -475,6 +473,20 @@ namespace ImCut
                     L"RegistrationMarks",
                     state.cut.registrationMarks),
                 0);
+
+        state.cut.registrationMarginMm =
+            static_cast<float>(
+                std::clamp(
+                    ReadDouble(
+                        filePath_,
+                        SectionCut,
+                        L"RegistrationMarginMm",
+                        state.cut.registrationMarginMm),
+                    0.0,
+                    1000.0));
+
+        if (!std::isfinite(state.cut.registrationMarginMm))
+            state.cut.registrationMarginMm = 5.0f;
 
         state.cut.closureMode =
             static_cast<UI::ClosureMode>(
@@ -943,6 +955,12 @@ namespace ImCut
             L"RegistrationMarks",
             state.cut.registrationMarks) && ok;
 
+        ok = WriteDouble(
+            writer,
+            SectionCut,
+            L"RegistrationMarginMm",
+            state.cut.registrationMarginMm) && ok;
+
         ok = WriteInt(
             writer,
             SectionCut,
@@ -1316,6 +1334,10 @@ namespace ImCut
         HashValue(
             hash,
             state.cut.registrationMarks);
+
+        HashValue(
+            hash,
+            state.cut.registrationMarginMm);
 
         HashValue(
             hash,

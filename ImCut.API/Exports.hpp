@@ -24,7 +24,6 @@ HRESULT(__stdcall*)(
     IUnknown* corelApplication,
     const ImCutNestingRequest* request);
 
-
 IMCUT_API HRESULT __stdcall ImCut_Initialize(
     IUnknown* corelApplication);
 
@@ -32,7 +31,6 @@ IMCUT_API HRESULT __stdcall ImCut_ConnectCorel2026();
 IMCUT_API HRESULT __stdcall ImCut_ConnectCorel2026Hidden();
 IMCUT_API HRESULT __stdcall ImCut_RunCutSaved();
 IMCUT_API HRESULT __stdcall ImCut_RunBleedSaved();
-
 IMCUT_API HRESULT __stdcall ImCut_ConvertSelectionSaved();
 
 IMCUT_API HRESULT __stdcall ImCut_Show();
@@ -49,7 +47,7 @@ IMCUT_API BOOL __stdcall ImCut_IsVisible();
 
 IMCUT_API HRESULT __stdcall ImCut_RunCut(
     int pageWidthMm,
-    int registrationMarks, 
+    int registrationMarks,
     int closureMode);
 
 IMCUT_API HRESULT __stdcall ImCut_RunBleed(

@@ -3,6 +3,7 @@
 #include "RegistrationLayout.hpp"
 #include "../OperationCancellation.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -1948,6 +1949,8 @@ namespace ImCut::Cut
                 preferredBlocked_ =
                     preferredMaskBuilder.Build();
 
+                BuildClearanceScores();
+
                 BuildCorridorScores(
                     settings.corridorProbeDistance);
 
@@ -1975,16 +1978,6 @@ namespace ImCut::Cut
                 return nx_ == 0 || ny_ == 0;
             }
 
-            [[nodiscard]] std::size_t Width() const noexcept
-            {
-                return nx_;
-            }
-
-            [[nodiscard]] std::size_t Height() const noexcept
-            {
-                return ny_;
-            }
-
             [[nodiscard]] std::size_t Total() const noexcept
             {
                 return nx_ * ny_;
@@ -2010,16 +2003,6 @@ namespace ImCut::Cut
                 return Position(
                     flatIndex % nx_,
                     flatIndex / nx_);
-            }
-
-            [[nodiscard]] const std::vector<double>& XCoordinates() const noexcept
-            {
-                return x_;
-            }
-
-            [[nodiscard]] const std::vector<double>& YCoordinates() const noexcept
-            {
-                return y_;
             }
 
             [[nodiscard]] bool IsSelected(
@@ -2053,10 +2036,11 @@ namespace ImCut::Cut
                     2.0;
             }
 
-            [[nodiscard]] bool HasPreferredClearance(
+            [[nodiscard]] double ClearanceScore(
                 std::size_t flatIndex) const noexcept
             {
-                return preferredBlocked_[flatIndex] == 0;
+                return static_cast<double>(
+                    clearanceScore_[flatIndex]);
             }
 
             [[nodiscard]] const std::vector<std::size_t>& Candidates() const noexcept
@@ -2115,6 +2099,87 @@ namespace ImCut::Cut
             }
 
         private:
+            void BuildClearanceScores()
+            {
+                const std::size_t total = Total();
+                clearanceScore_.assign(
+                    total,
+                    std::numeric_limits<float>::infinity());
+
+                for (std::size_t iy = 0; iy < ny_; ++iy)
+                {
+                    const std::size_t row = iy * nx_;
+                    double last = minX_;
+
+                    for (std::size_t ix = 0; ix < nx_; ++ix)
+                    {
+                        const std::size_t index = row + ix;
+                        if (blocked_[index] != 0)
+                        {
+                            last = x_[ix];
+                            clearanceScore_[index] = 0.0f;
+                        }
+                        else
+                        {
+                            clearanceScore_[index] =
+                                static_cast<float>(x_[ix] - last);
+                        }
+                    }
+
+                    last = maxX_;
+                    for (std::size_t ix = nx_; ix-- > 0;)
+                    {
+                        const std::size_t index = row + ix;
+                        if (blocked_[index] != 0)
+                        {
+                            last = x_[ix];
+                        }
+                        else
+                        {
+                            clearanceScore_[index] = std::min(
+                                clearanceScore_[index],
+                                static_cast<float>(last - x_[ix]));
+                        }
+                    }
+                }
+
+                for (std::size_t ix = 0; ix < nx_; ++ix)
+                {
+                    double last = minY_;
+
+                    for (std::size_t iy = 0; iy < ny_; ++iy)
+                    {
+                        const std::size_t index = iy * nx_ + ix;
+                        if (blocked_[index] != 0)
+                        {
+                            last = y_[iy];
+                        }
+                        else
+                        {
+                            clearanceScore_[index] = std::min(
+                                clearanceScore_[index],
+                                static_cast<float>(y_[iy] - last));
+                        }
+                    }
+
+                    last = maxY_;
+                    for (std::size_t iy = ny_; iy-- > 0;)
+                    {
+                        const std::size_t index = iy * nx_ + ix;
+                        if (blocked_[index] != 0)
+                        {
+                            last = y_[iy];
+                        }
+                        else
+                        {
+                            clearanceScore_[index] = std::min(
+                                clearanceScore_[index],
+                                static_cast<float>(last - y_[iy]));
+                        }
+                    }
+                }
+            }
+
             void BuildCorridorScores(
                 double probeDistance)
             {
@@ -2335,6 +2400,7 @@ namespace ImCut::Cut
             std::vector<double> y_;
             std::vector<std::uint8_t> blocked_;
             std::vector<std::uint8_t> preferredBlocked_;
+            std::vector<float> clearanceScore_;
             std::vector<std::uint8_t> corridorScore_;
             std::vector<std::uint8_t> selected_;
             std::vector<double> nearestMarkDistanceSq_;
@@ -2343,219 +2409,6 @@ namespace ImCut::Cut
             std::size_t validCandidateCount_ = 0;
             std::size_t blockedCandidateCount_ = 0;
         };
-
-        [[nodiscard]] std::vector<std::size_t> BuildCoordinateOrder(
-            const std::vector<double>& coordinates,
-            double target)
-        {
-            std::vector<std::size_t> order;
-            order.reserve(coordinates.size());
-
-            if (coordinates.empty())
-                return order;
-
-            const auto firstRight =
-                std::lower_bound(
-                    coordinates.begin(),
-                    coordinates.end(),
-                    target);
-
-            std::ptrdiff_t left =
-                static_cast<std::ptrdiff_t>(
-                    firstRight - coordinates.begin()) -
-                1;
-
-            std::size_t right =
-                static_cast<std::size_t>(
-                    firstRight - coordinates.begin());
-
-            while (left >= 0 || right < coordinates.size())
-            {
-                if (left < 0)
-                {
-                    order.push_back(right++);
-                    continue;
-                }
-
-                if (right >= coordinates.size())
-                {
-                    order.push_back(
-                        static_cast<std::size_t>(left--));
-                    continue;
-                }
-
-                const std::size_t leftIndex =
-                    static_cast<std::size_t>(left);
-
-                const double leftDistance =
-                    std::abs(
-                        coordinates[leftIndex] -
-                        target);
-
-                const double rightDistance =
-                    std::abs(
-                        coordinates[right] -
-                        target);
-
-                if (leftDistance <= rightDistance)
-                {
-                    order.push_back(leftIndex);
-                    --left;
-                }
-                else
-                {
-                    order.push_back(right);
-                    ++right;
-                }
-            }
-
-            return order;
-        }
-
-        struct CandidateSearchOrder
-        {
-            std::vector<std::size_t> x;
-            std::vector<std::size_t> y;
-        };
-
-        [[nodiscard]] CandidateSearchOrder BuildCandidateSearchOrder(
-            const CandidateGrid& grid,
-            const Point2D& target)
-        {
-            CandidateSearchOrder result;
-
-            result.x =
-                BuildCoordinateOrder(
-                    grid.XCoordinates(),
-                    target.x);
-
-            result.y =
-                BuildCoordinateOrder(
-                    grid.YCoordinates(),
-                    target.y);
-
-            return result;
-        }
-
-        [[nodiscard]] std::size_t FindNearestCandidateForTarget(
-            CandidateGrid& grid,
-            const Point2D& target,
-            const CandidateSearchOrder& searchOrder,
-            double requiredSpacingSq)
-        {
-            if (grid.Empty())
-                return std::numeric_limits<std::size_t>::max();
-
-            const bool hasMarks = grid.HasMarks();
-            std::size_t bestIndex = std::numeric_limits<std::size_t>::max();
-            double bestTargetDistanceSq = std::numeric_limits<double>::infinity();
-            double bestSpacingSq = -1.0;
-
-            for (const std::size_t iy : searchOrder.y)
-            {
-                const double dy =
-                    grid.YCoordinates()[iy] -
-                    target.y;
-
-                const double dySq =
-                    dy * dy;
-
-                if (std::isfinite(bestTargetDistanceSq) &&
-                    dySq > bestTargetDistanceSq + kEpsilon)
-                {
-                    break;
-                }
-
-                for (const std::size_t ix : searchOrder.x)
-                {
-                    const double dx =
-                        grid.XCoordinates()[ix] -
-                        target.x;
-
-                    const double targetDistanceSq =
-                        dx * dx + dySq;
-
-                    if (std::isfinite(bestTargetDistanceSq) &&
-                        targetDistanceSq >
-                        bestTargetDistanceSq + kEpsilon)
-                    {
-                        break;
-                    }
-
-                    const std::size_t flatIndex =
-                        grid.FlatIndex(ix, iy);
-
-                    if (grid.IsSelected(flatIndex))
-                        continue;
-
-                    const double spacingSq =
-                        grid.SpacingSq(flatIndex);
-
-                    if (hasMarks &&
-                        spacingSq + kEpsilon <
-                        requiredSpacingSq)
-                    {
-                        continue;
-                    }
-
-                    if (!grid.IsValid(flatIndex))
-                        continue;
-
-                    if (targetDistanceSq + kEpsilon <
-                        bestTargetDistanceSq ||
-                        (std::abs(
-                            targetDistanceSq -
-                            bestTargetDistanceSq) <= kEpsilon &&
-                            (spacingSq >
-                                bestSpacingSq + kEpsilon ||
-                                (std::abs(
-                                    spacingSq -
-                                    bestSpacingSq) <= kEpsilon &&
-                                    flatIndex < bestIndex))))
-                    {
-                        bestIndex = flatIndex;
-                        bestTargetDistanceSq =
-                            targetDistanceSq;
-                        bestSpacingSq =
-                            spacingSq;
-                    }
-                }
-            }
-
-            return bestIndex;
-        }
-
-        [[nodiscard]] std::size_t FindNearestCandidateWithRelaxation(
-            CandidateGrid& grid,
-            const Point2D& target,
-            double preferredSpacing,
-            double minimumSpacing,
-            double relaxFactor)
-        {
-            const auto order = BuildCandidateSearchOrder(grid, target);
-            double requiredSpacing = preferredSpacing;
-
-            for (;;)
-            {
-                const auto candidate = FindNearestCandidateForTarget(
-                    grid, target, order, requiredSpacing * requiredSpacing);
-
-                if (candidate != std::numeric_limits<std::size_t>::max())
-                    return candidate;
-
-                if (requiredSpacing <= minimumSpacing + kEpsilon)
-                    return std::numeric_limits<std::size_t>::max();
-
-                const double nextSpacing = std::max(
-                    minimumSpacing,
-                    requiredSpacing * relaxFactor);
-
-                if (std::abs(nextSpacing - requiredSpacing) < kEpsilon)
-                    return std::numeric_limits<std::size_t>::max();
-
-                requiredSpacing = nextSpacing;
-            }
-        }
 
         struct SpatialRegions
         {
@@ -2615,13 +2468,6 @@ namespace ImCut::Cut
                 return columns * rows;
             }
 
-            [[nodiscard]] double Diagonal() const noexcept
-            {
-                return std::hypot(
-                    page.Width(),
-                    page.Height());
-            }
-
             [[nodiscard]] std::size_t Index(
                 const Point2D& point) const noexcept
             {
@@ -2648,160 +2494,226 @@ namespace ImCut::Cut
                 return row * columns + column;
             }
 
-            [[nodiscard]] Point2D Center(
-                std::size_t index) const noexcept
-            {
-                const std::size_t column =
-                    index % columns;
-
-                const std::size_t row =
-                    index / columns;
-
-                return
-                {
-                    page.left +
-                        (static_cast<double>(column) + 0.5) *
-                        cellWidth,
-                    page.bottom +
-                        (static_cast<double>(row) + 0.5) *
-                        cellHeight
-                };
-            }
-
-            [[nodiscard]] double CenteringScore(
-                std::size_t index,
+            [[nodiscard]] std::size_t CornerIndex(
                 const Point2D& point) const noexcept
             {
-                const Point2D center = Center(index);
-                const double halfDiagonal =
-                    std::max(
-                        kEpsilon,
-                        0.5 * std::hypot(
-                            cellWidth,
-                            cellHeight));
+                const double x = std::clamp(
+                    (point.x - page.left) /
+                        std::max(kEpsilon, page.Width()),
+                    0.0,
+                    1.0);
 
-                return
-                    1.0 -
-                    std::clamp(
-                        std::sqrt(
-                            DistanceSq(
-                                point,
-                                center)) /
-                        halfDiagonal,
-                        0.0,
-                        1.0);
+                const double y = std::clamp(
+                    (point.y - page.bottom) /
+                        std::max(kEpsilon, page.Height()),
+                    0.0,
+                    1.0);
+
+                if (x <= 0.25 && y <= 0.25)
+                    return 0;
+                if (x >= 0.75 && y <= 0.25)
+                    return 1;
+                if (x <= 0.25 && y >= 0.75)
+                    return 2;
+                if (x >= 0.75 && y >= 0.75)
+                    return 3;
+
+                return 4;
             }
 
-            [[nodiscard]] double InteriorScore(
+            [[nodiscard]] bool IsMiddle(
                 const Point2D& point) const noexcept
             {
-                const double edgeDistance =
-                    std::min(
-                        {
-                            point.x - page.left,
-                            page.right - point.x,
-                            point.y - page.bottom,
-                            page.top - point.y
-                        });
+                const double x =
+                    (point.x - page.left) /
+                    std::max(kEpsilon, page.Width());
 
-                const double scale =
-                    std::max(
-                        kEpsilon,
-                        std::min(
-                            page.Width(),
-                            page.Height()) *
-                        0.25);
+                const double y =
+                    (point.y - page.bottom) /
+                    std::max(kEpsilon, page.Height());
 
-                return
-                    std::clamp(
-                        edgeDistance / scale,
-                        0.0,
-                        1.0);
+                return x >= 0.20 && x <= 0.80 &&
+                    y >= 0.20 && y <= 0.80;
             }
         };
 
-        [[nodiscard]] std::size_t FindBestTightCorridorCandidate(
-            CandidateGrid& grid,
+        inline constexpr std::size_t DistributionClassCount = 7;
+
+        [[nodiscard]] std::size_t DistributionClass(
+            const CandidateGrid& grid,
             const SpatialRegions& regions,
-            double physicalSpacing,
-            double preferredSpacing)
+            std::size_t flatIndex) noexcept
         {
-            const double requiredSpacingSq =
-                physicalSpacing * physicalSpacing;
-            std::size_t bestIndex =
-                std::numeric_limits<std::size_t>::max();
-            double bestScore =
-                -std::numeric_limits<double>::infinity();
-            std::size_t inspected = 0;
+            const std::size_t corner =
+                regions.CornerIndex(grid.Position(flatIndex));
 
-            for (const std::size_t flatIndex : grid.Candidates())
+            if (corner < 4)
+                return corner;
+
+            if (grid.CorridorScore(flatIndex) > 0.0)
+                return 4;
+
+            if (regions.IsMiddle(grid.Position(flatIndex)))
+                return 5;
+
+            return 6;
+        }
+
+        struct DistributionBalance
+        {
+            std::array<std::size_t, DistributionClassCount> targets{};
+            std::array<std::size_t, DistributionClassCount> counts{};
+            std::array<std::uint8_t, DistributionClassCount> available{};
+            std::vector<std::size_t> regionCounts;
+
+            DistributionBalance(
+                const CandidateGrid& grid,
+                const SpatialRegions& regions,
+                std::size_t requested,
+                bool bottomRightAnchor)
+                : regionCounts(regions.Count(), 0)
             {
-                Cancellation::Checkpoint(inspected++);
-
-                if (grid.IsSelected(flatIndex) ||
-                    !grid.IsValid(flatIndex) ||
-                    grid.HasPreferredClearance(flatIndex) ||
-                    grid.CorridorScore(flatIndex) <= 0.0)
+                for (const std::size_t flatIndex : grid.Candidates())
                 {
-                    continue;
+                    if (grid.IsValid(flatIndex))
+                    {
+                        available[DistributionClass(
+                            grid,
+                            regions,
+                            flatIndex)] = 1;
+                    }
                 }
 
-                const double spacingSq = grid.SpacingSq(flatIndex);
-                if (grid.HasMarks() &&
-                    spacingSq + kEpsilon < requiredSpacingSq)
+                if (bottomRightAnchor)
+                    available[1] = 1;
+
+                std::size_t remaining = requested;
+
+                for (std::size_t corner = 0;
+                    corner < 4 && remaining > 0;
+                    ++corner)
                 {
-                    continue;
+                    if (available[corner] != 0)
+                    {
+                        targets[corner] = 1;
+                        --remaining;
+                    }
                 }
 
-                const Point2D point = grid.Position(flatIndex);
-                const double spacing = grid.HasMarks()
-                    ? std::clamp(
-                        std::sqrt(spacingSq) /
-                            std::max(preferredSpacing, regions.Diagonal() * 0.55),
-                        0.0,
-                        1.0)
-                    : 0.5;
-                const double score =
-                    grid.CorridorScore(flatIndex) * 0.55 +
-                    regions.InteriorScore(point) * 0.25 +
-                    spacing * 0.20;
-
-                if (score > bestScore + kEpsilon ||
-                    (std::abs(score - bestScore) <= kEpsilon &&
-                        flatIndex < bestIndex))
+                constexpr std::array<double, 3> weights
                 {
-                    bestIndex = flatIndex;
-                    bestScore = score;
+                    0.40,
+                    0.30,
+                    0.30
+                };
+
+                while (remaining > 0)
+                {
+                    std::size_t bestClass = DistributionClassCount;
+                    double bestPriority = -1.0;
+
+                    for (std::size_t offset = 0; offset < weights.size(); ++offset)
+                    {
+                        const std::size_t category = offset + 4;
+                        if (available[category] == 0)
+                            continue;
+
+                        const double priority =
+                            weights[offset] /
+                            static_cast<double>(targets[category] + 1);
+
+                        if (priority > bestPriority + kEpsilon)
+                        {
+                            bestPriority = priority;
+                            bestClass = category;
+                        }
+                    }
+
+                    if (bestClass == DistributionClassCount)
+                    {
+                        for (std::size_t category = 0;
+                            category < 4;
+                            ++category)
+                        {
+                            if (available[category] == 0)
+                                continue;
+
+                            const double priority =
+                                1.0 /
+                                static_cast<double>(targets[category] + 1);
+
+                            if (priority > bestPriority + kEpsilon)
+                            {
+                                bestPriority = priority;
+                                bestClass = category;
+                            }
+                        }
+                    }
+
+                    if (bestClass == DistributionClassCount)
+                        break;
+
+                    ++targets[bestClass];
+                    --remaining;
                 }
             }
 
-            return bestIndex;
-        }
+            [[nodiscard]] double ClassNeed(
+                std::size_t category) const noexcept
+            {
+                const std::size_t target = targets[category];
+                const std::size_t count = counts[category];
 
-        [[nodiscard]] std::size_t FindBestRegionalCandidate(
+                if (target == 0)
+                    return count == 0 ? -0.25 : -1.0;
+
+                if (count < target)
+                {
+                    return static_cast<double>(target - count) /
+                        static_cast<double>(target);
+                }
+
+                return -std::min(
+                    1.0,
+                    static_cast<double>(count - target + 1) /
+                        static_cast<double>(target));
+            }
+
+            [[nodiscard]] double RegionNeed(
+                std::size_t region) const noexcept
+            {
+                return 1.0 /
+                    (1.0 +
+                        2.0 * static_cast<double>(regionCounts[region]));
+            }
+
+            void Add(
+                std::size_t category,
+                std::size_t region) noexcept
+            {
+                ++counts[category];
+                ++regionCounts[region];
+            }
+        };
+
+        [[nodiscard]] std::size_t FindBestBalancedCandidate(
             CandidateGrid& grid,
             const SpatialRegions& regions,
-            const std::vector<std::uint8_t>& servedRegions,
-            double physicalSpacing,
-            double preferredSpacing,
-            bool prioritizeGeometry)
+            const DistributionBalance& balance,
+            double requiredSpacing,
+            double coverageScale)
         {
             const bool hasMarks = grid.HasMarks();
-            const bool scoreSpacing = hasMarks && !prioritizeGeometry;
-            const double physicalSpacingSq =
-                physicalSpacing * physicalSpacing;
-
+            const double requiredSpacingSq =
+                requiredSpacing * requiredSpacing;
             std::size_t bestIndex =
                 std::numeric_limits<std::size_t>::max();
-
             double bestScore =
                 -std::numeric_limits<double>::infinity();
-
             double bestSpacingSq = -1.0;
             std::size_t inspected = 0;
 
-            for (const std::size_t flatIndex :
-                grid.Candidates())
+            for (const std::size_t flatIndex : grid.Candidates())
             {
                 Cancellation::Checkpoint(inspected++);
 
@@ -2811,62 +2723,33 @@ namespace ImCut::Cut
                     continue;
                 }
 
-                const Point2D point =
-                    grid.Position(flatIndex);
-
-                const std::size_t region =
-                    regions.Index(point);
-
-                if (servedRegions[region] != 0)
-                    continue;
-
-                const double spacingSq =
-                    grid.SpacingSq(flatIndex);
-
+                const double spacingSq = grid.SpacingSq(flatIndex);
                 if (hasMarks &&
-                    spacingSq + kEpsilon < physicalSpacingSq)
+                    spacingSq + kEpsilon < requiredSpacingSq)
                 {
                     continue;
                 }
 
-                const double spacingScore =
-                    scoreSpacing
-                    ? std::clamp(
-                        std::sqrt(spacingSq) /
-                        std::max(
-                            preferredSpacing,
-                            regions.Diagonal() * 0.55),
-                        0.0,
-                        1.0)
-                    : 0.5;
-
-                const double corridor =
+                const Point2D point = grid.Position(flatIndex);
+                const std::size_t region = regions.Index(point);
+                const std::size_t category =
+                    DistributionClass(grid, regions, flatIndex);
+                const double spacing = hasMarks
+                    ? std::sqrt(spacingSq)
+                    : coverageScale;
+                const double coverage = hasMarks
+                    ? spacing /
+                        (spacing + std::max(kEpsilon, coverageScale))
+                    : grid.ClearanceScore(flatIndex) /
+                        (grid.ClearanceScore(flatIndex) +
+                            std::max(1.0, coverageScale * 0.10));
+                const double corridorQuality =
                     grid.CorridorScore(flatIndex);
-
-                const double preferredClearance =
-                    grid.HasPreferredClearance(flatIndex)
-                    ? 1.0
-                    : 0.0;
-
-                const double centering =
-                    regions.CenteringScore(
-                        region,
-                        point);
-
-                const double interior =
-                    regions.InteriorScore(point);
-
                 const double score =
-                    scoreSpacing
-                    ? spacingScore * 0.52 +
-                        corridor * 0.20 +
-                        centering * 0.12 +
-                        preferredClearance * 0.08 +
-                        interior * 0.08
-                    : corridor * 0.30 +
-                        centering * 0.18 +
-                        preferredClearance * 0.12 +
-                        interior * 0.40;
+                    coverage * 0.45 +
+                    balance.RegionNeed(region) * 0.22 +
+                    balance.ClassNeed(category) * 0.30 +
+                    corridorQuality * 0.03;
 
                 if (score > bestScore + kEpsilon ||
                     (std::abs(score - bestScore) <= kEpsilon &&
@@ -2877,92 +2760,6 @@ namespace ImCut::Cut
                     bestIndex = flatIndex;
                     bestScore = score;
                     bestSpacingSq = spacingSq;
-                }
-            }
-
-            return bestIndex;
-        }
-
-        [[nodiscard]] std::size_t FindBestWeightedCandidate(
-            CandidateGrid& grid,
-            const SpatialRegions& regions,
-            const std::vector<std::size_t>& regionCounts,
-            double requiredSpacing,
-            double preferredSpacing)
-        {
-            const bool hasMarks = grid.HasMarks();
-            const double requiredSpacingSq =
-                requiredSpacing * requiredSpacing;
-
-            std::size_t bestIndex =
-                std::numeric_limits<std::size_t>::max();
-
-            double bestScore =
-                -std::numeric_limits<double>::infinity();
-
-            double bestSpacingSq = -1.0;
-            std::size_t inspected = 0;
-
-            for (const std::size_t flatIndex :
-                grid.Candidates())
-            {
-                Cancellation::Checkpoint(inspected++);
-
-                if (grid.IsSelected(flatIndex) ||
-                    !grid.IsValid(flatIndex))
-                {
-                    continue;
-                }
-
-                const double distanceSq =
-                    grid.SpacingSq(flatIndex);
-
-                if (hasMarks &&
-                    distanceSq + kEpsilon <
-                    requiredSpacingSq)
-                {
-                    continue;
-                }
-
-                const Point2D point =
-                    grid.Position(flatIndex);
-
-                const std::size_t region =
-                    regions.Index(point);
-
-                const double spacingScore =
-                    hasMarks
-                    ? std::clamp(
-                        std::sqrt(distanceSq) /
-                        std::max(
-                            preferredSpacing,
-                            regions.Diagonal() * 0.55),
-                        0.0,
-                        1.0)
-                    : 0.5;
-
-                const double regionNeed =
-                    1.0 /
-                    (1.0 +
-                        static_cast<double>(
-                            regionCounts[region]));
-
-                const double score =
-                    spacingScore * 0.62 +
-                    grid.CorridorScore(flatIndex) * 0.18 +
-                    regionNeed * 0.10 +
-                    (grid.HasPreferredClearance(flatIndex) ? 0.06 : 0.0) +
-                    regions.InteriorScore(point) * 0.04;
-
-                if (score > bestScore + kEpsilon ||
-                    (std::abs(score - bestScore) <= kEpsilon &&
-                        (distanceSq > bestSpacingSq + kEpsilon ||
-                            (std::abs(distanceSq - bestSpacingSq) <= kEpsilon &&
-                                flatIndex < bestIndex))))
-                {
-                    bestIndex = flatIndex;
-                    bestScore = score;
-                    bestSpacingSq = distanceSq;
                 }
             }
 
@@ -3081,66 +2878,27 @@ namespace ImCut::Cut
                 page,
                 requested);
 
-            std::vector<std::uint8_t> servedRegions(
-                regions.Count(),
-                0);
+            DistributionBalance balance(
+                grid,
+                regions,
+                requested,
+                useBottomRightAnchor);
 
-            std::vector<std::size_t> regionCounts(
-                regions.Count(),
-                0);
-
-            if (result.marks.size() < requested)
+            if (useBottomRightAnchor)
             {
-                const std::size_t corridorIndex =
-                    FindBestTightCorridorCandidate(
-                        grid,
-                        regions,
-                        physicalMinSpacing,
-                        preferredSpacing);
-
-                if (corridorIndex !=
-                    std::numeric_limits<std::size_t>::max())
-                {
-                    const std::size_t region =
-                        regions.Index(grid.Position(corridorIndex));
-                    CommitCandidate(grid, corridorIndex, result);
-                    servedRegions[region] = 1;
-                    ++regionCounts[region];
-                }
+                balance.Add(
+                    1,
+                    regions.Index(bottomRightAnchor));
             }
 
-            while (result.marks.size() < requested)
-            {
-                Cancellation::ThrowIfRequested();
-
-                const std::size_t selectedIndex =
-                    FindBestRegionalCandidate(
-                        grid,
-                        regions,
-                        servedRegions,
-                        physicalMinSpacing,
-                        preferredSpacing,
-                        result.marks.size() ==
-                            (useBottomRightAnchor ? 1u : 0u));
-
-                if (selectedIndex ==
-                    std::numeric_limits<std::size_t>::max())
-                {
-                    break;
-                }
-
-                const std::size_t region =
-                    regions.Index(
-                        grid.Position(selectedIndex));
-
-                CommitCandidate(
-                    grid,
-                    selectedIndex,
-                    result);
-
-                servedRegions[region] = 1;
-                ++regionCounts[region];
-            }
+            const double coverageScale =
+                std::max(
+                    preferredSpacing,
+                    std::sqrt(
+                        std::max(
+                            kEpsilon,
+                            page.Width() * page.Height() /
+                                static_cast<double>(requested))));
 
             while (result.marks.size() < requested)
             {
@@ -3151,12 +2909,12 @@ namespace ImCut::Cut
 
                 for (;;)
                 {
-                    selectedIndex = FindBestWeightedCandidate(
+                    selectedIndex = FindBestBalancedCandidate(
                         grid,
                         regions,
-                        regionCounts,
+                        balance,
                         requiredSpacing,
-                        preferredSpacing);
+                        coverageScale);
 
                     if (selectedIndex != std::numeric_limits<std::size_t>::max() ||
                         requiredSpacing <= absoluteMinSpacing + kEpsilon)
@@ -3179,12 +2937,18 @@ namespace ImCut::Cut
                     regions.Index(
                         grid.Position(selectedIndex));
 
+                const std::size_t category =
+                    DistributionClass(
+                        grid,
+                        regions,
+                        selectedIndex);
+
                 CommitCandidate(
                     grid,
                     selectedIndex,
                     result);
 
-                ++regionCounts[region];
+                balance.Add(category, region);
             }
 
             result.validCandidateCount = grid.ValidCandidateCount();

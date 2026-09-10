@@ -68,7 +68,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(CorelTypeLibDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Geometry\ThirdParty\Clipper2\include;$(CorelTypeLibDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -93,7 +93,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(CorelTypeLibDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Geometry\ThirdParty\Clipper2\include;$(CorelTypeLibDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -121,6 +121,66 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Updater\Updater.hpp" />
+    <ClInclude Include="Geometry\Canonical\CanonicalGeometry.hpp" />
+    <ClInclude Include="Geometry\Canonical\GeometryFingerprint.hpp" />
+    <ClInclude Include="Geometry\Corel\CorelGeometryAdapter.hpp" />
+    <ClInclude Include="Geometry\Corel\CurvePathBuilder.hpp" />
+    <ClInclude Include="Geometry\Curves\CubicBezier.hpp" />
+    <ClInclude Include="Geometry\Curves\Flatten.hpp" />
+    <ClInclude Include="Geometry\Distance\Collision.hpp" />
+    <ClInclude Include="Geometry\Distance\Distance.hpp" />
+    <ClInclude Include="Geometry\Distance\PreparedCollision.hpp" />
+    <ClInclude Include="Geometry\Geometry.hpp" />
+    <ClInclude Include="Geometry\GeometryContext.hpp" />
+    <ClInclude Include="Geometry\GeometryCertification.hpp" />
+    <ClInclude Include="Geometry\GeometryDiagnostics.hpp" />
+    <ClInclude Include="Geometry\GeometryExecutor.hpp" />
+    <ClInclude Include="Geometry\GeometryTestHooks.hpp" />
+    <ClInclude Include="Geometry\GeometryInstrumentation.hpp" />
+    <ClInclude Include="Geometry\GeometryResult.hpp" />
+    <ClInclude Include="Geometry\GeometrySession.hpp" />
+    <ClInclude Include="Geometry\GeometryTolerance.hpp" />
+    <ClInclude Include="Geometry\GeometryTypes.hpp" />
+    <ClInclude Include="Geometry\Intersection\Intersection.hpp" />
+    <ClInclude Include="Geometry\Intersection\SelfIntersection.hpp" />
+    <ClInclude Include="Geometry\Math\Bounds2.hpp" />
+    <ClInclude Include="Geometry\Math\CertifiedInterval.hpp" />
+    <ClInclude Include="Geometry\Math\Polynomial.hpp" />
+    <ClInclude Include="Geometry\Math\Predicates.hpp" />
+    <ClInclude Include="Geometry\Math\Transform2.hpp" />
+    <ClInclude Include="Geometry\Math\Vec2.hpp" />
+    <ClInclude Include="Geometry\Polygon\Boolean.hpp" />
+    <ClInclude Include="Geometry\Polygon\ConvexDecomposition.hpp" />
+    <ClInclude Include="Geometry\Polygon\DecompositionPortfolio.hpp" />
+    <ClInclude Include="Geometry\Polygon\ConvexHull.hpp" />
+    <ClInclude Include="Geometry\Polygon\Minkowski.hpp" />
+    <ClInclude Include="Geometry\Polygon\Nfp.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpAuto.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpBatch.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpCover.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpConvolution.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpHoleFilter.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpLattice.hpp" />
+    <ClInclude Include="Geometry\Polygon\NfpPrepared.hpp" />
+    <ClInclude Include="Geometry\Polygon\Offset.hpp" />
+    <ClInclude Include="Geometry\Polygon\PolygonBackend.hpp" />
+    <ClInclude Include="Geometry\Polygon\PolygonConversion.hpp" />
+    <ClInclude Include="Geometry\Polygon\PolygonMetrics.hpp" />
+    <ClInclude Include="Geometry\PreparedGeometry.hpp" />
+    <ClInclude Include="Geometry\Quantization.hpp" />
+    <ClInclude Include="Geometry\Spatial\SegmentBVH.hpp" />
+    <ClInclude Include="Geometry\Topology\ContainmentTree.hpp" />
+    <ClInclude Include="Geometry\Topology\Winding.hpp" />
+    <ClInclude Include="Geometry\Validation\GeometryValidation.hpp" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.core.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.engine.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.minkowski.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.offset.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.rectclip.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.triangulation.h" />
+    <ClInclude Include="Geometry\ThirdParty\Clipper2\include\clipper2\clipper.version.h" />
+
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AutoBleeding\AutoBleeding.cpp" />
@@ -136,6 +196,62 @@
     <ClCompile Include="UI.cpp" />
     <ClCompile Include="Updater\Updater.cpp" />
     <ClCompile Include="Updater\ArtifactValidation.cpp" />
+<ClCompile Include="Geometry\Canonical\CanonicalGeometry.cpp" />
+    <ClCompile Include="Geometry\Canonical\GeometryFingerprint.cpp" />
+    <ClCompile Include="Geometry\Corel\CorelGeometryAdapter.cpp" />
+    <ClCompile Include="Geometry\Corel\CurvePathBuilder.cpp" />
+    <ClCompile Include="Geometry\Curves\CubicBezier.cpp" />
+    <ClCompile Include="Geometry\Curves\Flatten.cpp" />
+    <ClCompile Include="Geometry\Distance\Collision.cpp" />
+    <ClCompile Include="Geometry\Distance\Distance.cpp" />
+    <ClCompile Include="Geometry\Distance\PreparedCollision.cpp" />
+    <ClCompile Include="Geometry\GeometryExecutor.cpp" />
+    <ClCompile Include="Geometry\GeometryTestHooks.cpp" />
+    <ClCompile Include="Geometry\GeometryResult.cpp" />
+    <ClCompile Include="Geometry\GeometrySession.cpp" />
+    <ClCompile Include="Geometry\Intersection\Intersection.cpp" />
+    <ClCompile Include="Geometry\Intersection\SelfIntersection.cpp" />
+    <ClCompile Include="Geometry\Math\Polynomial.cpp" />
+    <ClCompile Include="Geometry\Math\Predicates.cpp" />
+    <ClCompile Include="Geometry\Polygon\Boolean.cpp" />
+    <ClCompile Include="Geometry\Polygon\Clipper2Backend.cpp" />
+    <ClCompile Include="Geometry\Polygon\ConvexDecomposition.cpp" />
+    <ClCompile Include="Geometry\Polygon\DecompositionPortfolio.cpp" />
+    <ClCompile Include="Geometry\Polygon\ConvexHull.cpp" />
+    <ClCompile Include="Geometry\Polygon\Minkowski.cpp" />
+    <ClCompile Include="Geometry\Polygon\Nfp.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpAuto.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpBatch.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpCover.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpConvolution.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpHoleFilter.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpLattice.cpp" />
+    <ClCompile Include="Geometry\Polygon\NfpPrepared.cpp" />
+    <ClCompile Include="Geometry\Polygon\Offset.cpp" />
+    <ClCompile Include="Geometry\Polygon\PolygonConversion.cpp" />
+    <ClCompile Include="Geometry\Polygon\PolygonMetrics.cpp" />
+    <ClCompile Include="Geometry\PreparedGeometry.cpp" />
+    <ClCompile Include="Geometry\Quantization.cpp" />
+    <ClCompile Include="Geometry\Spatial\SegmentBVH.cpp" />
+    <ClCompile Include="Geometry\Topology\ContainmentTree.cpp" />
+    <ClCompile Include="Geometry\Topology\Winding.cpp" />
+    <ClCompile Include="Geometry\Validation\GeometryValidation.cpp" />
+    <ClCompile Include="Geometry\ThirdParty\Clipper2\src\clipper.engine.cpp" />
+    <ClCompile Include="Geometry\ThirdParty\Clipper2\src\clipper.offset.cpp" />
+    <ClCompile Include="Geometry\ThirdParty\Clipper2\src\clipper.rectclip.cpp" />
+    <ClCompile Include="Geometry\ThirdParty\Clipper2\src\clipper.triangulation.cpp" />
+
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Geometry\**\*.cpp">
+      <WarningLevel>Level4</WarningLevel>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <DisableSpecificWarnings>4100;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <ClCompile Update="Geometry\ThirdParty\**\*.cpp">
+      <WarningLevel>Level3</WarningLevel>
+    </ClCompile>
+
   </ItemGroup>
   <ItemGroup>
     <None Include="ImCut.def" />
